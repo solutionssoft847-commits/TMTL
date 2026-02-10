@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: engine-detection-api
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: engine-detection-db
+          property: connectionString
+      - key: HF_SPACE_URL
+        value: https://YOUR_USERNAME-engine-part-detection.hf.space
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+databases:
+  - name: engine-detection-db
+    databaseName: engine_detection
+    user: engine_user
