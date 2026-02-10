@@ -2,8 +2,8 @@ services:
   - type: web
     name: engine-detection-api
     env: python
-    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
-    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && pip install gunicorn"
+    startCommand: "python -m gunicorn main:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -11,6 +11,8 @@ services:
           property: connectionString
       - key: HF_SPACE_URL
         value: https://YOUR_USERNAME-engine-part-detection.hf.space
+      - key: HF_TOKEN
+        sync: false # This will prompt you to enter the secret in the Render UI
       - key: PYTHON_VERSION
         value: 3.11.9
 
