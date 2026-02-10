@@ -1,6 +1,7 @@
 import os
 import io
 import logging
+import tempfile
 from typing import List, Dict, Any
 from PIL import Image
 from gradio_client import Client, handle_file
@@ -23,7 +24,7 @@ class HuggingFaceClient:
                 logger.warning("HF_SPACE_URL not set. HuggingFaceClient will be disabled.")
                 return None
             try:
-                self._client = Client(self.space_url, hf_token=self.hf_token)
+                self._client = Client(self.space_url, token=self.hf_token)
                 logger.info(f"Connected to HF Space: {self.space_url}")
             except Exception as e:
                 logger.error(f"Failed to connect to HF Space: {e}")
@@ -38,8 +39,9 @@ class HuggingFaceClient:
         try:
             # Convert PIL images to paths/buffers that Gradio Client can handle
             temp_paths = []
+            temp_dir = tempfile.gettempdir()
             for i, img in enumerate(images):
-                path = f"/tmp/temp_template_{i}.png"
+                path = os.path.join(temp_dir, f"temp_template_{i}.png")
                 img.save(path)
                 temp_paths.append(handle_file(path))
             
@@ -85,7 +87,8 @@ class HuggingFaceClient:
         
         try:
             # Save PIL image to temp file for Gradio
-            temp_path = "/tmp/temp_scan.png"
+            temp_dir = tempfile.gettempdir()
+            temp_path = os.path.join(temp_dir, "temp_scan.png")
             image.save(temp_path)
             
             result = self.client.predict(

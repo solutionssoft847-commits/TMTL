@@ -57,6 +57,22 @@ camera_manager = CameraManager()
 async def startup_event():
     """Initialize services on startup"""
     logger.info("Starting Engine Detection API...")
+    
+    # Simple schema synchronization for templates table
+    try:
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            # Check if name column exists in templates table
+            check_sql = text("SELECT column_name FROM information_schema.columns WHERE table_name='templates' AND column_name='name'")
+            result = conn.execute(check_sql).fetchone()
+            if not result:
+                logger.info("Adding 'name' column to 'templates' table...")
+                conn.execute(text("ALTER TABLE templates ADD COLUMN name VARCHAR(100)"))
+                conn.execute(text("CREATE UNIQUE INDEX ix_templates_name ON templates (name)"))
+                conn.commit()
+    except Exception as e:
+        logger.warning(f"Schema sync warning: {e}")
+
     asyncio.create_task(periodic_cleanup())
 
 @app.on_event("shutdown")
