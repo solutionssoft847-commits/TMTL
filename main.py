@@ -10,17 +10,17 @@ import io
 from PIL import Image
 import asyncio
 
-from .database import engine, get_db, Base
-from .models import InspectionLog, Template, Camera
-from .schemas import (
+from database import engine, get_db, Base
+from models import InspectionLog, Template, Camera
+from schemas import (
     InspectionCreate, InspectionResponse, 
     TemplateCreate, TemplateResponse,
     CameraCreate, CameraResponse, CameraUpdate,
     StatsResponse
 )
-from .hf_client import HuggingFaceClient
-from .camera_manager import CameraManager
-from .utils import convert_image_to_bytes, cleanup_old_files
+from hf_client import HuggingFaceClient
+from camera_manager import CameraManager
+from utils import convert_image_to_bytes, cleanup_old_files
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

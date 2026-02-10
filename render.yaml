@@ -2,8 +2,8 @@ services:
   - type: web
     name: engine-detection-api
     env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -12,7 +12,7 @@ services:
       - key: HF_SPACE_URL
         value: https://YOUR_USERNAME-engine-part-detection.hf.space
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.11.9
 
 databases:
   - name: engine-detection-db
