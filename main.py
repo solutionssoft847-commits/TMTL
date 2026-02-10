@@ -53,41 +53,101 @@ hf_client = HuggingFaceClient()
 camera_manager = CameraManager()
 
 # Cleanup task
+# @app.on_event("startup")
+# async def startup_event():
+#     """Initialize services on startup"""
+#     logger.info("Starting Engine Detection API...")
+    
+#     # Simple schema synchronization for missing columns
+#     try:
+#         from sqlalchemy import text
+#         with engine.connect() as conn:
+#             # Table: templates
+#             cols_templates = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='templates'")).fetchall()
+#             cols_templates = [c[0] for c in cols_templates]
+            
+#             if 'name' not in cols_templates:
+#                 logger.info("Adding 'name' column to 'templates'")
+#                 conn.execute(text("ALTER TABLE templates ADD COLUMN name VARCHAR(100)"))
+#                 conn.execute(text("CREATE UNIQUE INDEX ix_templates_name ON templates (name)"))
+            
+#             if 'image_count' not in cols_templates:
+#                 logger.info("Adding 'image_count' column to 'templates'")
+#                 conn.execute(text("ALTER TABLE templates ADD COLUMN image_count INTEGER"))
+
+#             # Table: cameras
+#             cols_cameras = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='cameras'")).fetchall()
+#             cols_cameras = [c[0] for c in cols_cameras]
+            
+#             if 'camera_type' not in cols_cameras:
+#                 logger.info("Adding 'camera_type' column to 'cameras'")
+#                 conn.execute(text("ALTER TABLE cameras ADD COLUMN camera_type VARCHAR(20)"))
+            
+#             conn.commit()
+#             logger.info("Database schema sync completed.")
+#     except Exception as e:
+#         logger.warning(f"Schema sync warning: {e}")
+
+#     asyncio.create_task(periodic_cleanup())
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
     logger.info("Starting Engine Detection API...")
     
-    # Simple schema synchronization for missing columns
+    # Database schema migration
     try:
-        from sqlalchemy import text
+        from sqlalchemy import text, inspect
+        
         with engine.connect() as conn:
-            # Table: templates
-            cols_templates = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='templates'")).fetchall()
-            cols_templates = [c[0] for c in cols_templates]
+            inspector = inspect(engine)
             
-            if 'name' not in cols_templates:
-                logger.info("Adding 'name' column to 'templates'")
-                conn.execute(text("ALTER TABLE templates ADD COLUMN name VARCHAR(100)"))
-                conn.execute(text("CREATE UNIQUE INDEX ix_templates_name ON templates (name)"))
+            # Check templates table
+            if 'templates' in inspector.get_table_names():
+                template_cols = [col['name'] for col in inspector.get_columns('templates')]
+                
+                if 'name' not in template_cols:
+                    logger.info("Adding 'name' column to 'templates'")
+                    conn.execute(text("ALTER TABLE templates ADD COLUMN name VARCHAR(100)"))
+                    conn.commit()
+                
+                if 'image_count' not in template_cols:
+                    logger.info("Adding 'image_count' column to 'templates'")
+                    conn.execute(text("ALTER TABLE templates ADD COLUMN image_count INTEGER DEFAULT 0"))
+                    conn.commit()
+                
+                # Add unique index on name if not exists
+                try:
+                    conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_templates_name ON templates (name)"))
+                    conn.commit()
+                except:
+                    pass
             
-            if 'image_count' not in cols_templates:
-                logger.info("Adding 'image_count' column to 'templates'")
-                conn.execute(text("ALTER TABLE templates ADD COLUMN image_count INTEGER"))
-
-            # Table: cameras
-            cols_cameras = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='cameras'")).fetchall()
-            cols_cameras = [c[0] for c in cols_cameras]
+            # Check cameras table
+            if 'cameras' in inspector.get_table_names():
+                camera_cols = [col['name'] for col in inspector.get_columns('cameras')]
+                
+                if 'camera_type' not in camera_cols:
+                    logger.info("Adding 'camera_type' column to 'cameras'")
+                    conn.execute(text("ALTER TABLE cameras ADD COLUMN camera_type VARCHAR(20) DEFAULT 'ip'"))
+                    conn.commit()
+                
+                if 'url' not in camera_cols:
+                    logger.info("Adding 'url' column to 'cameras'")
+                    conn.execute(text("ALTER TABLE cameras ADD COLUMN url VARCHAR(500)"))
+                    conn.commit()
+                
+                if 'is_active' not in camera_cols:
+                    logger.info("Adding 'is_active' column to 'cameras'")
+                    conn.execute(text("ALTER TABLE cameras ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
+                    conn.commit()
             
-            if 'camera_type' not in cols_cameras:
-                logger.info("Adding 'camera_type' column to 'cameras'")
-                conn.execute(text("ALTER TABLE cameras ADD COLUMN camera_type VARCHAR(20)"))
+            logger.info("✅ Database schema migration completed")
             
-            conn.commit()
-            logger.info("Database schema sync completed.")
     except Exception as e:
-        logger.warning(f"Schema sync warning: {e}")
-
+        logger.error(f"⚠️ Schema migration error: {e}")
+    
+    # Start periodic cleanup
     asyncio.create_task(periodic_cleanup())
 
 @app.on_event("shutdown")
