@@ -58,18 +58,33 @@ async def startup_event():
     """Initialize services on startup"""
     logger.info("Starting Engine Detection API...")
     
-    # Simple schema synchronization for templates table
+    # Simple schema synchronization for missing columns
     try:
         from sqlalchemy import text
         with engine.connect() as conn:
-            # Check if name column exists in templates table
-            check_sql = text("SELECT column_name FROM information_schema.columns WHERE table_name='templates' AND column_name='name'")
-            result = conn.execute(check_sql).fetchone()
-            if not result:
-                logger.info("Adding 'name' column to 'templates' table...")
+            # Table: templates
+            cols_templates = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='templates'")).fetchall()
+            cols_templates = [c[0] for c in cols_templates]
+            
+            if 'name' not in cols_templates:
+                logger.info("Adding 'name' column to 'templates'")
                 conn.execute(text("ALTER TABLE templates ADD COLUMN name VARCHAR(100)"))
                 conn.execute(text("CREATE UNIQUE INDEX ix_templates_name ON templates (name)"))
-                conn.commit()
+            
+            if 'image_count' not in cols_templates:
+                logger.info("Adding 'image_count' column to 'templates'")
+                conn.execute(text("ALTER TABLE templates ADD COLUMN image_count INTEGER"))
+
+            # Table: cameras
+            cols_cameras = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='cameras'")).fetchall()
+            cols_cameras = [c[0] for c in cols_cameras]
+            
+            if 'camera_type' not in cols_cameras:
+                logger.info("Adding 'camera_type' column to 'cameras'")
+                conn.execute(text("ALTER TABLE cameras ADD COLUMN camera_type VARCHAR(20)"))
+            
+            conn.commit()
+            logger.info("Database schema sync completed.")
     except Exception as e:
         logger.warning(f"Schema sync warning: {e}")
 

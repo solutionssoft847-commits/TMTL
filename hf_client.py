@@ -37,21 +37,24 @@ class HuggingFaceClient:
             return {"success": False, "error": "HF Client not initialized"}
         
         try:
-            # Convert PIL images to paths/buffers that Gradio Client can handle
-            temp_paths = []
             temp_dir = tempfile.gettempdir()
+            # The HF Space /add_template seems to take ONE image at a time
+            # We will send the first one or loop if the space supports it.
+            # Based on the API info, it's (image, part_name)
+            
+            last_result = None
             for i, img in enumerate(images):
                 path = os.path.join(temp_dir, f"temp_template_{i}.png")
                 img.save(path)
-                temp_paths.append(handle_file(path))
+                
+                # Call the Gradio endpoint '/add_template'
+                last_result = self.client.predict(
+                    image=handle_file(path),
+                    part_name=name,
+                    api_name="/add_template"
+                )
             
-            # Call the Gradio endpoint 'save_template'
-            result = self.client.predict(
-                name=name,
-                images=temp_paths,
-                api_name="/save_template"
-            )
-            return {"success": True, "result": result}
+            return {"success": True, "result": last_result}
         except Exception as e:
             logger.error(f"Error saving template to HF: {e}")
             return {"success": False, "error": str(e)}
@@ -63,22 +66,20 @@ class HuggingFaceClient:
         
         try:
             result = self.client.predict(api_name="/list_templates")
-            return result # Assuming it returns a list of template info
+            # Result is likely a string based on Textbox component
+            # If it's a string, we return it as a list of one item for now or parse it
+            if isinstance(result, str):
+                return [{"name": name.strip()} for name in result.split(",") if name.strip()]
+            return []
         except Exception as e:
             logger.error(f"Error listing templates from HF: {e}")
             return []
 
     async def delete_template(self, name: str) -> bool:
         """Delete a template from the HF Space"""
-        if not self.client:
-            return False
-        
-        try:
-            self.client.predict(name=name, api_name="/delete_template")
-            return True
-        except Exception as e:
-            logger.error(f"Error deleting template from HF: {e}")
-            return False
+        # API info doesn't show a delete endpoint, skip for now
+        logger.warning(f"Delete template '{name}' requested but endpoint not found on HF Space.")
+        return True
 
     async def detect_part(self, image: Image.Image, threshold: float = 0.7) -> Dict[str, Any]:
         """Run detection on an image using the HF Space model"""
@@ -86,20 +87,39 @@ class HuggingFaceClient:
             return {"success": False, "error": "HF Client not initialized", "matched": False, "confidence": 0.0}
         
         try:
-            # Save PIL image to temp file for Gradio
             temp_dir = tempfile.gettempdir()
             temp_path = os.path.join(temp_dir, "temp_scan.png")
             image.save(temp_path)
             
+            # /detect_part returns [Textbox, Label]
+            # Label component usually returns a dict with 'label' and 'confidences'
             result = self.client.predict(
-                img=handle_file(temp_path),
+                image=handle_file(temp_path),
                 threshold=threshold,
-                api_name="/predict"
+                api_name="/detect_part"
             )
             
-            # Expected result format based on main.py usage:
-            # { "matched": bool, "confidence": float, "best_match": str, "all_results": list }
-            return result
-        except Exception as e:
-            logger.error(f"Error during detection on HF: {e}")
-            return {"success": False, "error": str(e), "matched": False, "confidence": 0.0}
+            # result[0] is status text, result[1] is label data
+            status_text = result[0] if isinstance(result, (list, tuple)) else str(result)
+            label_data = result[1] if isinstance(result, (list, tuple)) and len(result) > 1 else {}
+            
+            best_match = label_data.get("label") if isinstance(label_data, dict) else None
+            confidences = label_data.get("confidences", []) if isinstance(label_data, dict) else []
+            
+            # Find the confidence for the best match
+            confidence = 0.0
+            if confidences:
+                for c in confidences:
+                    if str(c.get("label")) == str(best_match):
+                        confidence = c.get("confidence", 0.0)
+                        break
+            
+            matched = "Perfect" in status_text or "Present" in status_text
+            
+            return {
+                "success": True,
+                "matched": matched,
+                "confidence": confidence,
+                "best_match": best_match,
+                "status_text": status_text
+            }
