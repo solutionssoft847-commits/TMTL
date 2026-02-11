@@ -550,49 +550,6 @@ async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/cameras/detect")
-async def detect_cameras():
-    """Detect available local cameras"""
-    try:
-        available = camera_manager.detect_available_cameras()
-        return available
-    except Exception as e:
-        logger.error(f"Camera detection error: {e}")
-        return []
-
-@app.post("/api/cameras/auto_add")
-async def auto_add_cameras(db: Session = Depends(get_db)):
-    """Automatically detect and add local cameras to database"""
-    try:
-        detected = camera_manager.detect_available_cameras()
-        added = []
-        
-        # Get existing camera URLs to avoid duplicates
-        existing_urls = [c.url for c in db.query(Camera).all()]
-        
-        for cam_info in detected:
-            if cam_info['url'] not in existing_urls:
-                db_camera = Camera(
-                    name=cam_info['name'],
-                    camera_type=cam_info['type'],
-                    url=cam_info['url'],
-                    is_active=True,
-                    created_at=datetime.utcnow()
-                )
-                db.add(db_camera)
-                db.commit()
-                db.refresh(db_camera)
-                
-                # Add to camera manager
-                camera_manager.add_camera(db_camera.id, db_camera.url)
-                added.append(cam_info['name'])
-        
-        return {"success": True, "added": added}
-    except Exception as e:
-        logger.error(f"Auto-add cameras error: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/api/cameras/test")
 async def test_camera_connection(url: str):
     """Test camera connection"""

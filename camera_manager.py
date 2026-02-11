@@ -78,27 +78,6 @@ class CameraManager:
                 return buffer.tobytes()
             return None
 
-    def detect_available_cameras(self) -> list:
-        """Scan for available local USB cameras"""
-        available = []
-        # Scan indices 0-5 for available cameras
-        for i in range(5):
-            try:
-                cap = cv2.VideoCapture(i)
-                if cap.isOpened():
-                    ret, _ = cap.read()
-                    if ret:
-                        available.append({
-                            "id": i,
-                            "name": f"USB Camera {i}",
-                            "url": str(i),
-                            "type": "usb"
-                        })
-                    cap.release()
-            except Exception as e:
-                logger.debug(f"Scan failed for index {i}: {e}")
-        return available
-
     def test_camera(self, url: str) -> bool:
         """Test if a camera URL is valid and accessible"""
         try:
