@@ -32,9 +32,10 @@
                 <a href="#" class="nav-item active" data-target="overview">
                     <i class="fa-solid fa-chart-pie"></i> Overview
                 </a>
-                <!-- <a href="#" class="nav-item" data-target="live">
-                    <i class="fa-solid fa-eye"></i> Live Inspection
-                </a> -->
+                <!-- Action Item (Modal Trigger) - Reuses nav-item style but handled separately -->
+                <a href="#" class="nav-item special-action" id="open-scan-modal">
+                    <i class="fa-solid fa-camera"></i> Inspection
+                </a>
                 <a href="#" class="nav-item" data-target="templates">
                     <i class="fa-solid fa-layer-group"></i> Templates
                 </a>
@@ -62,9 +63,6 @@
                     </div>
                 </div>
                 <div class="user-profile">
-                    <button class="btn-primary" id="open-scan-modal">
-                        <i class="fa-solid fa-camera"></i> Quick Scan
-                    </button>
                     <div class="user-info">
                         <img src="https://ui-avatars.com/api/?name=TMTL+Admin&background=0D8ABC&color=fff" alt="User">
                         <span>TMTL Admin</span>
@@ -74,35 +72,52 @@
 
             <!-- Sections -->
             <div id="overview-section" class="content-section active">
-                <div class="stats-grid">
-                    <div class="stat-card total">
-                        <div class="icon-box"><i class="fa-solid fa-box-open"></i></div>
-                        <div class="stat-info">
-                            <h3>Total Scans</h3>
-                            <p id="total-scans">0</p>
-                        </div>
+                <div class="dashboard-header-tech">
+                    <div>
+                        <h2><i class="fa-solid fa-chart-line"></i> Ops Center</h2>
+                        <p class="tech-sub">Real-time Interference & Telemetry</p>
                     </div>
-                    <div class="stat-card perfect">
-                        <div class="icon-box"><i class="fa-solid fa-check-circle"></i></div>
-                        <div class="stat-info">
-                            <h3>Bearing Present</h3>
-                            <p id="perfect-count">0</p>
-                        </div>
-                    </div>
-                    <div class="stat-card defected">
-                        <div class="icon-box"><i class="fa-solid fa-triangle-exclamation"></i></div>
-                        <div class="stat-info">
-                            <h3>Bearing Absent</h3>
-                            <p id="defected-count">0</p>
-                        </div>
+                    <div class="system-status-pill">
+                        <span class="pulse"></span> SYSTEM ONLINE
                     </div>
                 </div>
 
-                <div class="overview-charts">
-                    <div class="chart-container">
-                        <h3>Last 24h Scan History</h3>
-                        <div class="history-list" id="recent-history-list">
-                            <div class="empty-state">No recent scans</div>
+                <div class="telemetry-grid">
+                    <div class="telemetry-card blue-accent">
+                        <div class="t-icon"><i class="fa-solid fa-layer-group"></i></div>
+                        <div class="t-content">
+                            <span class="t-label">TOTAL SCANS</span>
+                            <span class="t-value" id="total-scans">--</span>
+                        </div>
+                        <div class="t-decor"></div>
+                    </div>
+
+                    <div class="telemetry-card green-accent">
+                        <div class="t-icon"><i class="fa-solid fa-circle-check"></i></div>
+                        <div class="t-content">
+                            <span class="t-label">PASSED</span>
+                            <span class="t-value" id="perfect-count">--</span>
+                        </div>
+                        <div class="t-decor"></div>
+                    </div>
+
+                    <div class="telemetry-card red-accent">
+                        <div class="t-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div class="t-content">
+                            <span class="t-label">FAILED</span>
+                            <span class="t-value" id="defected-count">--</span>
+                        </div>
+                        <div class="t-decor"></div>
+                    </div>
+                </div>
+
+                <div class="cv-panel mt-4">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-clock-rotate-left"></i> 24h Activity Log</h3>
+                    </div>
+                    <div class="panel-body p-0">
+                        <div class="history-list-tech" id="recent-history-list">
+                            <div class="empty-state-tech">Initializing Data Stream...</div>
                         </div>
                     </div>
                 </div>
@@ -149,47 +164,60 @@
                 </div>
 
                 <div id="template-wizard-view" class="hidden">
-                    <div class="template-grid">
-                        <div class="info-card">
-                            <h3><i class="fa-solid fa-info-circle"></i> Reference System</h3>
-                            <p>Upload 3-10 images of PERFECT parts to train the reference system. This improvements
-                                defect detection accuracy.</p>
+                    <div class="cv-panel">
+                        <div class="panel-header">
+                            <h3><i class="fa-solid fa-microchip"></i> Model Configuration</h3>
+                            <span class="status-indicator">SYSTEM READY</span>
                         </div>
 
-                        <div id="wizard-upload" class="wizard-tab-content">
-                            <div class="upload-zone" id="template-upload-zone">
-                                <i class="fa-solid fa-cloud-arrow-up"></i>
-                                <p>Drag & drop reference images here or click to browse</p>
-                                <p class="sub-text">(Min 3, Max 10 images)</p>
+                        <div class="panel-body">
+                            <div class="instruction-box">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <span>Inject 3-10 "Gold Standard" (Perfect) reference images to calibrate the defect
+                                    detection algorithm. Consistency is key.</span>
+                            </div>
+
+                            <div class="upload-zone tech-border" id="template-upload-zone">
+                                <div class="scanner-line"></div>
+                                <i class="fa-solid fa-upload fa-2x"></i>
+                                <h4>Initialize Reference Dataset</h4>
+                                <p class="mono-text">Drop images or Click to Browse</p>
+                                <div class="upload-meta">
+                                    <span>Min: 3</span> | <span>Max: 10</span> | <span>Fmt: JPG/PNG</span>
+                                </div>
                                 <input type="file" id="template-files" multiple hidden accept="image/*">
                             </div>
-                        </div>
 
-                        <div id="template-preview-list" class="preview-list"></div>
-                        <div style="display: flex; gap: 10px; margin-top: 1rem;">
-                            <button id="save-template-btn" class="btn-success hidden">
-                                <i class="fa-solid fa-save"></i> Save Reference Model
-                            </button>
-                            <button class="btn-outline" onclick="closeTemplateWizard()">
-                                <i class="fa-solid fa-times"></i> Cancel
-                            </button>
+                            <div id="template-preview-list" class="preview-grid-tech"></div>
+
+                            <div class="action-bar">
+                                <button id="save-template-btn" class="btn-tech-primary hidden">
+                                    <i class="fa-solid fa-database"></i> Commit Model
+                                </button>
+                                <button class="btn-tech-outline" onclick="closeTemplateWizard()">
+                                    <i class="fa-solid fa-ban"></i> Abort
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div id="camera-section" class="content-section">
-                <div class="section-header">
-                    <h2>Camera Management</h2>
-                    <button class="btn-primary" onclick="openAddCameraModal()">
-                        <i class="fa-solid fa-plus"></i> Add Camera
+                <div class="dashboard-header-tech">
+                    <div>
+                        <h2><i class="fa-solid fa-video"></i> Video Sources</h2>
+                        <p class="tech-sub">Feed Configuration & Status</p>
+                    </div>
+                    <button class="btn-tech-primary" onclick="openAddCameraModal()">
+                        <i class="fa-solid fa-plus"></i> <span style="margin-left:5px">CONNECT SOURCE</span>
                     </button>
                 </div>
 
-                <div id="camera-list-container" class="camera-grid">
+                <div id="camera-list-container" class="camera-grid-tech">
                     <!-- Populated by JS -->
-                    <div class="camera-card loading">
-                        <p>Loading cameras...</p>
+                    <div class="loading-tech">
+                        <i class="fa-solid fa-circle-notch fa-spin"></i> ESTABLISHING CONNECTION...
                     </div>
                 </div>
             </div>
@@ -230,74 +258,87 @@
             </div>
 
             <div id="history-section" class="content-section">
-                <!-- ... existing history section ... -->
-                <div class="section-header">
-                    <h2>Inspection History</h2>
-                    <button class="btn-outline" onclick="exportHistory()">
-                        <i class="fa-solid fa-file-excel"></i> Export to Excel
-                    </button>
-                </div>
-                <div class="table-container">
-                    <table class="history-table">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Time</th>
-                                <th>Status</th>
-                                <th>View</th>
-                            </tr>
-                        </thead>
-                        <tbody id="history-table-body">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
+                <div class="cv-panel full-height">
+                    <div class="panel-header">
+                        <h3><i class="fa-solid fa-database"></i> Inspection Log</h3>
+                        <div class="header-actions">
+                            <span class="status-indicator">LIVE DATA</span>
+                            <button class="btn-tech-outline small" onclick="exportHistory()">
+                                <i class="fa-solid fa-file-export"></i> Export CSV
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="panel-body p-0">
+                        <div class="tech-table-container">
+                            <table class="tech-table">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Timestamp</th>
+                                        <th>Result</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-table-body">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
 
         </main>
     </div>
 
-    <!-- Quick Scan Modal -->
-    <div id="scan-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3><i class="fa-solid fa-camera"></i> Quick Scan - Defect Detection</h3>
-                <span class="close-modal">&times;</span>
+    <!-- Inspection / Quick Scan Modal -->
+    <div id="scan-modal" class="modal-tech-overlay">
+        <div class="cv-panel modal-tech-content">
+            <div class="panel-header">
+                <h3><i class="fa-solid fa-crosshairs"></i> Object Inspection System</h3>
+                <span class="close-modal-tech"><i class="fa-solid fa-xmark"></i></span>
             </div>
-            <div class="modal-body">
-                <div class="tab-buttons">
-                    <button class="tab-btn active" data-tab="webcam">
-                        <i class="fa-solid fa-camera"></i> Use Webcam
+
+            <div class="panel-body">
+                <div class="tech-tabs">
+                    <button class="tech-tab active" data-tab="webcam">
+                        <i class="fa-solid fa-video"></i> LIVE FEED
                     </button>
-                    <button class="tab-btn" data-tab="upload">
-                        <i class="fa-solid fa-upload"></i> Upload Image
+                    <button class="tech-tab" data-tab="upload">
+                        <i class="fa-solid fa-upload"></i> FILE INGEST
                     </button>
                 </div>
 
                 <div id="tab-webcam" class="tab-content active">
-                    <div class="modal-live-view">
+                    <div class="modal-live-view-tech">
+                        <div class="hud-corners"></div>
                         <img src="/api/video_feed" alt="Webcam">
+                        <div class="reticle"></div>
                     </div>
-                    <button class="btn-primary full-width" onclick="captureAndScan()">
-                        <i class="fa-solid fa-bolt"></i> Capture & Scan
+                    <button class="btn-tech-primary full-width mt-4" onclick="captureAndScan()">
+                        <i class="fa-solid fa-bolt"></i> INITIATE SCAN SEQUENCE
                     </button>
                 </div>
 
                 <div id="tab-upload" class="tab-content">
-                    <p>Select Image</p>
-                    <div class="file-input-wrapper">
-                        <label for="modal-file-upload" class="custom-file-upload">
-                            Choose File
-                        </label>
-                        <span id="file-name">No file chosen</span>
-                        <input type="file" id="modal-file-upload" accept="image/*">
+                    <div class="upload-zone tech-border small-upload" id="modal-upload-zone-wrapper">
+                        <div class="scanner-line"></div>
+                        <i class="fa-solid fa-file-import fa-2x"></i>
+                        <p class="mono-text">Select Source Image</p>
+                        <!-- Added label wrapper for custom styling -->
+                        <div class="file-input-wrapper-tech">
+                            <label for="modal-file-upload" class="btn-tech-outline small">BROWSE FILES</label>
+                            <span id="file-name" class="mono-text small">No file selected</span>
+                            <input type="file" id="modal-file-upload" accept="image/*" hidden>
+                        </div>
                     </div>
-                    <button class="btn-primary full-width" id="modal-upload-btn" disabled>
-                        <i class="fa-solid fa-magnifying-glass"></i> Analyze
+                    <button class="btn-tech-primary full-width mt-4" id="modal-upload-btn" disabled>
+                        <i class="fa-solid fa-magnifying-glass-chart"></i> PROCESS IMAGE
                     </button>
                 </div>
 
-                <div id="scan-result" class="scan-result-box hidden">
+                <div id="scan-result" class="scan-result-box-tech hidden">
                     <!-- Result will be shown here -->
                 </div>
             </div>

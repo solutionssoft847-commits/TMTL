@@ -62,21 +62,31 @@ document.addEventListener('DOMContentLoaded', function () {
             const data = await response.json();
 
             if (data.length === 0) {
-                recentHistoryList.innerHTML = '<div class="empty-state">No recent scans</div>';
+                recentHistoryList.innerHTML = '<div class="empty-state-tech">System IDLE. No recent detections.</div>';
                 return;
             }
 
-            recentHistoryList.innerHTML = data.map(scan => `
-                <div class="history-item ${scan.status.toLowerCase()}">
-                    <div class="history-info">
-                        <strong>${scan.status}</strong> - ${scan.matched_part || 'Unknown'}
-                        <span>${new Date(scan.timestamp).toLocaleString()}</span>
+            recentHistoryList.innerHTML = data.map(scan => {
+                const statusColor = scan.status === 'PERFECT' ? 'var(--success-color)' : 'var(--danger-color)';
+                const icon = scan.status === 'PERFECT' ? 'fa-check-circle' : 'fa-triangle-exclamation';
+
+                return `
+                <div class="tech-list-item">
+                    <div class="tech-item-info">
+                        <div class="tech-item-main">
+                            <i class="fa-solid ${icon}" style="color: ${statusColor}"></i>
+                            ${scan.status}
+                        </div>
+                        <div class="tech-item-time">
+                            ${new Date(scan.timestamp).toLocaleTimeString()} | ID: #${scan.matched_part || 'UNIDENTIFIED'}
+                        </div>
                     </div>
-                    <div class="history-confidence">
-                        ${Math.round(scan.confidence * 100)}%
+                    <div class="tech-item-meta">
+                        <span class="tech-conf">${Math.round(scan.confidence * 100)}%</span>
+                        <span class="tech-conf-label">CONFIDENCE</span>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         } catch (error) {
             console.error('Error loading recent history:', error);
         }
@@ -248,23 +258,35 @@ document.addEventListener('DOMContentLoaded', function () {
             const data = await response.json();
 
             container.innerHTML = data.map(c => `
-                <div class="camera-card ${c.is_active ? 'active' : 'inactive'}">
-                    <div class="camera-preview">
-                        <img src="/api/video_feed?camera_id=${c.id}" alt="Preview">
-                        <span class="status-badge">${c.is_active ? 'Online' : 'Offline'}</span>
+                <div class="camera-card-tech ${c.is_active ? 'active' : 'inactive'}">
+                    <div class="cam-header">
+                        <span class="cam-id">CAM-${c.id.toString().padStart(2, '0')}</span>
+                        <span class="cam-status ${c.is_active ? 'on' : 'off'}">
+                             <i class="fa-solid fa-circle"></i> ${c.is_active ? 'ONLINE' : 'OFFLINE'}
+                        </span>
                     </div>
-                    <div class="camera-info">
+                    <div class="camera-preview-tech">
+                        <div class="scan-overlay"></div>
+                        <img src="/api/video_feed?camera_id=${c.id}" alt="Preview" onerror="this.style.display='none'">
+                        <div class="no-signal">NO SIGNAL</div>
+                    </div>
+                    <div class="cam-info-tech">
                         <h4>${c.name}</h4>
-                        <p>${c.camera_type.toUpperCase()} - ${c.url}</p>
+                        <div class="cam-meta">${c.camera_type.toUpperCase()} :: ${c.url}</div>
                     </div>
-                    <div class="camera-actions">
-                        <button onclick="toggleCamera(${c.id}, ${!c.is_active})">${c.is_active ? 'Disable' : 'Enable'}</button>
-                        <button class="btn-danger" onclick="deleteCamera(${c.id})">Remove</button>
+                    <div class="cam-actions-tech">
+                        <button class="btn-tech-sm" onclick="toggleCamera(${c.id}, ${!c.is_active})">
+                           ${c.is_active ? '<i class="fa-solid fa-power-off"></i> DEACTIVATE' : '<i class="fa-solid fa-power-off"></i> ACTIVATE'}
+                        </button>
+                        <button class="btn-tech-sm danger" onclick="deleteCamera(${c.id})">
+                             <i class="fa-solid fa-trash"></i>
+                        </button>
                     </div>
                 </div>
             `).join('');
         } catch (error) {
             console.error('Error loading cameras:', error);
+            document.getElementById('camera-list-container').innerHTML = '<div class="error-msg">Failed to load camera feeds</div>';
         }
     }
 
@@ -279,23 +301,37 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     // ================= QUICK SCAN MODAL =================
+    // ================= SCAN MODAL TECH =================
     const scanModal = document.getElementById('scan-modal');
     const openScanBtn = document.getElementById('open-scan-modal');
-    const closeScanBtn = document.querySelector('#scan-modal .close-modal');
+    // Updated selector for the new close button class
+    const closeScanBtn = document.querySelector('.close-modal-tech');
     const uploadBtn = document.getElementById('modal-upload-btn');
     const fileInput = document.getElementById('modal-file-upload');
     const scanResultBox = document.getElementById('scan-result');
 
-    openScanBtn.onclick = () => scanModal.style.display = 'block';
+    openScanBtn.onclick = (e) => {
+        e.preventDefault(); // Prevent default anchor behavior
+        scanModal.style.display = 'block';
+    };
+
     closeScanBtn.onclick = () => {
         scanModal.style.display = 'none';
         scanResultBox.classList.add('hidden');
     };
 
-    // Tabs in Scan Modal
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    // Close on click outside
+    scanModal.onclick = (e) => {
+        if (e.target === scanModal) {
+            scanModal.style.display = 'none';
+            scanResultBox.classList.add('hidden');
+        }
+    };
+
+    // Tabs in Scan Modal (Logic updated for .tech-tab)
+    document.querySelectorAll('.tech-tab').forEach(btn => {
         btn.onclick = () => {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tech-tab').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById(`tab-${btn.getAttribute('data-tab')}`).classList.add('active');
@@ -303,20 +339,20 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     fileInput.onchange = (e) => {
-        document.getElementById('file-name').textContent = e.target.files[0]?.name || 'No file chosen';
+        document.getElementById('file-name').textContent = e.target.files[0]?.name || 'No file selected';
         uploadBtn.disabled = !e.target.files[0];
     };
 
     window.captureAndScan = async function () {
         scanResultBox.classList.remove('hidden');
-        scanResultBox.innerHTML = '<div class="loading-spinner">Analyzing Frame...</div>';
+        scanResultBox.innerHTML = '<div class="loading-spinner-tech"><i class="fa-solid fa-circle-notch fa-spin"></i> ACQUIRING TARGET...</div>';
 
         try {
             const response = await fetch('/api/capture_and_scan', { method: 'POST' });
             const result = await response.json();
             showScanResult(result);
         } catch (error) {
-            scanResultBox.innerHTML = '<div class="error">Failed to capture frame.</div>';
+            scanResultBox.innerHTML = '<div class="error-msg">Signal Lost. Capture failed.</div>';
         }
     };
 
@@ -328,7 +364,7 @@ document.addEventListener('DOMContentLoaded', function () {
         formData.append('file', file);
 
         scanResultBox.classList.remove('hidden');
-        scanResultBox.innerHTML = '<div class="loading-spinner">Analyzing Uploaded Image...</div>';
+        scanResultBox.innerHTML = '<div class="loading-spinner-tech"><i class="fa-solid fa-microchip fa-bounce"></i> PROCESSING DATA STREAM...</div>';
 
         try {
             const response = await fetch('/api/scan', {
@@ -338,23 +374,30 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await response.json();
             showScanResult(result);
         } catch (error) {
-            scanResultBox.innerHTML = '<div class="error">Analysis failed.</div>';
+            scanResultBox.innerHTML = '<div class="error-msg">Analysis protocol failed.</div>';
         }
     };
 
     function showScanResult(result) {
         const isPerfect = result.status === 'PERFECT';
+
         scanResultBox.innerHTML = `
-            <div class="result-header ${result.status.toLowerCase()}">
-                <i class="fa-solid ${isPerfect ? 'fa-check-circle' : 'fa-circle-exclamation'}"></i>
-                <span>Status: ${result.status}</span>
+            <div class="tech-result-header ${result.status.toLowerCase()}">
+                <i class="fa-solid ${isPerfect ? 'fa-check-circle' : 'fa-triangle-exclamation'}"></i>
+                <span>${result.status}</span>
             </div>
-            <div class="result-body">
-                <p><strong>Part Match:</strong> ${result.matched_part || 'None'}</p>
-                <div class="confidence-bar">
-                    <div class="fill" style="width: ${result.confidence * 100}%"></div>
+            <div class="tech-result-grid">
+                <div>
+                    <span class="tech-metric-label">IDENTIFIED OBJECT</span>
+                    <span class="tech-metric-value">${result.matched_part || 'UNKNOWN_ENTITY'}</span>
                 </div>
-                <p class="confidence-text">Confidence: ${Math.round(result.confidence * 100)}%</p>
+                <div>
+                    <span class="tech-metric-label">CONFIDENCE SCORE</span>
+                    <span class="tech-metric-value">${Math.round(result.confidence * 100)}%</span>
+                    <div class="tech-progress">
+                        <div class="tech-progress-bar" style="width: ${result.confidence * 100}%"></div>
+                    </div>
+                </div>
             </div>
         `;
         updateStats(); // Refresh dashboard
@@ -367,12 +410,30 @@ document.addEventListener('DOMContentLoaded', function () {
             const response = await fetch('/api/history');
             const data = await response.json();
 
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#6c757d;">No inspection records found.</td></tr>';
+                return;
+            }
+
             tbody.innerHTML = data.map(h => `
                 <tr>
-                    <td>#${h.id}</td>
-                    <td>${new Date(h.timestamp).toLocaleString()}</td>
-                    <td><span class="status-tag ${h.status.toLowerCase()}">${h.status}</span></td>
-                    <td><button class="btn-text">View Details</button></td>
+                    <td class="mono-text">#${h.id.toString().padStart(4, '0')}</td>
+                    <td>${new Date(h.timestamp).toLocaleString(undefined, {
+                year: 'numeric', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            })}</td>
+                    <td><span class="status-badge-tech ${h.status.toLowerCase()}">${h.status}</span></td>
+                    <td>
+                        <div class="confidence-bar-mini" style="width: 100px; height: 4px; background: #333; border-radius: 2px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px;">
+                            <div style="width: ${h.confidence * 100}%; background: var(--tech-accent); height: 100%;"></div>
+                        </div>
+                        <span style="font-size: 0.8rem;">${Math.round(h.confidence * 100)}%</span>
+                    </td>
+                    <td>
+                        <button class="btn-tech-icon" title="View Details">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                    </td>
                 </tr>
             `).join('');
         } catch (error) {
