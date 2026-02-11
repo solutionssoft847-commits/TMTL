@@ -81,10 +81,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             ${new Date(scan.timestamp).toLocaleTimeString()} | ID: #${scan.matched_part || 'UNIDENTIFIED'}
                         </div>
                     </div>
-                    <div class="tech-item-meta">
-                        <span class="tech-conf">${Math.round(scan.confidence * 100)}%</span>
-                        <span class="tech-conf-label">CONFIDENCE</span>
-                    </div>
+
                 </div>
             `}).join('');
         } catch (error) {
@@ -358,13 +355,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     <span class="tech-metric-label">IDENTIFIED OBJECT</span>
                     <span class="tech-metric-value">${result.matched_part || 'UNKNOWN_ENTITY'}</span>
                 </div>
-                <div>
-                    <span class="tech-metric-label">CONFIDENCE SCORE</span>
-                    <span class="tech-metric-value">${Math.round(result.confidence * 100)}%</span>
-                    <div class="tech-progress">
-                        <div class="tech-progress-bar" style="width: ${result.confidence * 100}%"></div>
-                    </div>
-                </div>
             </div>
         `;
         updateStats(); // Refresh dashboard stats
@@ -405,17 +395,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 hour: '2-digit', minute: '2-digit'
             })}</td>
                     <td><span class="status-badge-tech ${h.status.toLowerCase()}">${h.status}</span></td>
-                    <td>
-                        <div class="confidence-bar-mini" style="width: 100px; height: 4px; background: #333; border-radius: 2px; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px;">
-                            <div style="width: ${h.confidence * 100}%; background: var(--tech-accent); height: 100%;"></div>
-                        </div>
-                        <span style="font-size: 0.8rem;">${Math.round(h.confidence * 100)}%</span>
-                    </td>
-                    <td>
-                        <button class="btn-tech-icon" title="View Details">
-                            <i class="fa-solid fa-eye"></i>
-                        </button>
-                    </td>
+
                 </tr>
             `).join('');
         } catch (error) {
