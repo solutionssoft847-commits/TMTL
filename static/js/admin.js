@@ -300,71 +300,38 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 
-    // ================= QUICK SCAN MODAL =================
-    // ================= SCAN MODAL TECH =================
-    const scanModal = document.getElementById('scan-modal');
-    const openScanBtn = document.getElementById('open-scan-modal');
-    // Updated selector for the new close button class
-    const closeScanBtn = document.querySelector('.close-modal-tech');
-    const uploadBtn = document.getElementById('modal-upload-btn');
-    const fileInput = document.getElementById('modal-file-upload');
-    const scanResultBox = document.getElementById('scan-result');
+    // ================= INSPECTION SECTION LOGIC =================
+    const mainUploadBtn = document.getElementById('main-upload-btn');
+    const mainFileInput = document.getElementById('main-file-upload');
+    const mainScanResultBox = document.getElementById('main-scan-result');
 
-    openScanBtn.onclick = (e) => {
-        e.preventDefault(); // Prevent default anchor behavior
-        scanModal.style.display = 'block';
-    };
-
-    closeScanBtn.onclick = () => {
-        scanModal.style.display = 'none';
-        scanResultBox.classList.add('hidden');
-    };
-
-    // Close on click outside
-    scanModal.onclick = (e) => {
-        if (e.target === scanModal) {
-            scanModal.style.display = 'none';
-            scanResultBox.classList.add('hidden');
-        }
-    };
-
-    // Tabs in Scan Modal (Logic updated for .tech-tab)
-    document.querySelectorAll('.tech-tab').forEach(btn => {
-        btn.onclick = () => {
-            document.querySelectorAll('.tech-tab').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            btn.classList.add('active');
-            document.getElementById(`tab-${btn.getAttribute('data-tab')}`).classList.add('active');
-        };
-    });
-
-    fileInput.onchange = (e) => {
-        document.getElementById('file-name').textContent = e.target.files[0]?.name || 'No file selected';
-        uploadBtn.disabled = !e.target.files[0];
+    mainFileInput.onchange = (e) => {
+        document.getElementById('main-file-name').textContent = e.target.files[0]?.name || 'No file selected';
+        mainUploadBtn.disabled = !e.target.files[0];
     };
 
     window.captureAndScan = async function () {
-        scanResultBox.classList.remove('hidden');
-        scanResultBox.innerHTML = '<div class="loading-spinner-tech"><i class="fa-solid fa-circle-notch fa-spin"></i> ACQUIRING TARGET...</div>';
+        mainScanResultBox.classList.remove('hidden');
+        mainScanResultBox.innerHTML = '<div class="loading-spinner-tech"><i class="fa-solid fa-circle-notch fa-spin"></i> ACQUIRING TARGET...</div>';
 
         try {
             const response = await fetch('/api/capture_and_scan', { method: 'POST' });
             const result = await response.json();
-            showScanResult(result);
+            showMainScanResult(result);
         } catch (error) {
-            scanResultBox.innerHTML = '<div class="error-msg">Signal Lost. Capture failed.</div>';
+            mainScanResultBox.innerHTML = '<div class="error-msg">Signal Lost. Capture failed.</div>';
         }
     };
 
-    uploadBtn.onclick = async () => {
-        const file = fileInput.files[0];
+    mainUploadBtn.onclick = async () => {
+        const file = mainFileInput.files[0];
         if (!file) return;
 
         const formData = new FormData();
         formData.append('file', file);
 
-        scanResultBox.classList.remove('hidden');
-        scanResultBox.innerHTML = '<div class="loading-spinner-tech"><i class="fa-solid fa-microchip fa-bounce"></i> PROCESSING DATA STREAM...</div>';
+        mainScanResultBox.classList.remove('hidden');
+        mainScanResultBox.innerHTML = '<div class="loading-spinner-tech"><i class="fa-solid fa-microchip fa-bounce"></i> PROCESSING DATA STREAM...</div>';
 
         try {
             const response = await fetch('/api/scan', {
@@ -372,16 +339,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 body: formData
             });
             const result = await response.json();
-            showScanResult(result);
+            showMainScanResult(result);
         } catch (error) {
-            scanResultBox.innerHTML = '<div class="error-msg">Analysis protocol failed.</div>';
+            mainScanResultBox.innerHTML = '<div class="error-msg">Analysis protocol failed.</div>';
         }
     };
 
-    function showScanResult(result) {
+    function showMainScanResult(result) {
         const isPerfect = result.status === 'PERFECT';
 
-        scanResultBox.innerHTML = `
+        mainScanResultBox.innerHTML = `
             <div class="tech-result-header ${result.status.toLowerCase()}">
                 <i class="fa-solid ${isPerfect ? 'fa-check-circle' : 'fa-triangle-exclamation'}"></i>
                 <span>${result.status}</span>
@@ -400,8 +367,23 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
             </div>
         `;
-        updateStats(); // Refresh dashboard
+        updateStats(); // Refresh dashboard stats
     }
+
+    // Tabs logic for any .tech-tab
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tech-tab')) {
+            const btn = e.target;
+            const parent = btn.parentElement;
+            parent.querySelectorAll('.tech-tab').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Find the container for tab contents
+            const section = btn.closest('.content-section, .cv-panel');
+            section.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(`tab-${btn.getAttribute('data-tab')}`).classList.add('active');
+        }
+    });
 
     // ================= HISTORY =================
     async function loadHistory() {

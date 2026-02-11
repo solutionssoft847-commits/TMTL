@@ -32,8 +32,7 @@
                 <a href="#" class="nav-item active" data-target="overview">
                     <i class="fa-solid fa-chart-pie"></i> Overview
                 </a>
-                <!-- Action Item (Modal Trigger) - Reuses nav-item style but handled separately -->
-                <a href="#" class="nav-item special-action" id="open-scan-modal">
+                <a href="#" class="nav-item" data-target="inspection">
                     <i class="fa-solid fa-camera"></i> Inspection
                 </a>
                 <a href="#" class="nav-item" data-target="templates">
@@ -72,16 +71,6 @@
 
             <!-- Sections -->
             <div id="overview-section" class="content-section active">
-                <div class="dashboard-header-tech">
-                    <div>
-                        <h2><i class="fa-solid fa-chart-line"></i> Ops Center</h2>
-                        <p class="tech-sub">Real-time Interference & Telemetry</p>
-                    </div>
-                    <div class="system-status-pill">
-                        <span class="pulse"></span> SYSTEM ONLINE
-                    </div>
-                </div>
-
                 <div class="telemetry-grid">
                     <div class="telemetry-card blue-accent">
                         <div class="t-icon"><i class="fa-solid fa-layer-group"></i></div>
@@ -123,32 +112,60 @@
                 </div>
             </div>
 
-            <!-- <div id="live-section" class="content-section">
-                <h2>Live Inspection Board</h2>
-                <div class="live-large-container">
-                    <div class="main-feed">
-                        <img src="/api/video_feed" alt="Live Feed Large">
-                        <div class="overlay-stats">
-                            <span class="badge">Live</span>
+            <div id="inspection-section" class="content-section">
+
+                <div class="cv-panel">
+                    <div class="panel-header">
+                        <div class="tech-tabs" style="margin-bottom: 0; border-bottom: none;">
+                            <button class="tech-tab active" data-tab="webcam-main">
+                                <i class="fa-solid fa-video"></i> LIVE FEED
+                            </button>
+                            <!-- <button class="tech-tab" data-tab="upload-main">
+                                <i class="fa-solid fa-upload"></i> DATA STREAM INGEST
+                            </button> -->
                         </div>
                     </div>
-                    <div class="inspection-controls">
-                        <div class="control-grid" style="display: flex; gap: 10px; margin-bottom: 1.5rem;">
-                            <button class="btn-primary large" style="flex: 1;" onclick="startInspection()">
-                                <i class="fa-solid fa-play"></i> Start Inspection
-                            </button>
-                            <button class="btn-primary large" style="flex: 1; background-color: var(--danger-color);"
-                                onclick="stopInspection()">
-                                <i class="fa-solid fa-stop"></i> Stop Inspection
-                            </button>
+
+                    <div class="panel-body">
+                        <div id="tab-webcam-main" class="tab-content active">
+                            <div class="modal-live-view-tech" style="height: 450px;">
+                                <div class="hud-corners"></div>
+                                <img src="/api/video_feed" alt="Webcam Feed" id="main-inspection-feed">
+                                <div class="reticle"></div>
+                            </div>
+                            <div class="action-bar" style="justify-content: center;">
+                                <button class="btn-tech-primary" style="width: 300px;" onclick="captureAndScan()">
+                                    <i class="fa-solid fa-bolt"></i> INITIATE SCAN SEQUENCE
+                                </button>
+                            </div>
                         </div>
-                        <div class="last-result-card">
-                            <h4>Last Result</h4>
-                            <div id="large-result-display">Waiting for input...</div>
+
+                        <div id="tab-upload-main" class="tab-content">
+                            <div class="upload-zone tech-border" id="main-upload-zone-wrapper">
+                                <div class="scanner-line"></div>
+                                <i class="fa-solid fa-file-import fa-3x"></i>
+                                <h4>Ready for Data Ingest</h4>
+                                <p class="mono-text">Select high-resolution sensor captures for analysis</p>
+                                <div class="file-input-wrapper-tech">
+                                    <label for="main-file-upload" class="btn-tech-outline">BROWSE SYSTEM FILES</label>
+                                    <span id="main-file-name" class="mono-text" style="margin-left: 15px;">No file
+                                        selected</span>
+                                    <input type="file" id="main-file-upload" accept="image/*" hidden>
+                                </div>
+                            </div>
+                            <div class="action-bar" style="justify-content: center;">
+                                <button class="btn-tech-primary" style="width: 300px;" id="main-upload-btn" disabled>
+                                    <i class="fa-solid fa-magnifying-glass-chart"></i> EXECUTE ANALYSIS
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="main-scan-result" class="scan-result-box-tech hidden">
+                            <!-- Results will appear here -->
                         </div>
                     </div>
                 </div>
-            </div> -->
+            </div>
 
             <div id="templates-section" class="content-section">
                 <div class="section-header">
@@ -166,10 +183,12 @@
                 <div id="template-wizard-view" class="hidden">
                     <div class="cv-panel">
                         <div class="panel-header">
-                            <h3><i class="fa-solid fa-microchip"></i> Model Configuration</h3>
-                            <span class="status-indicator">SYSTEM READY</span>
+                            <div>
+                                <h3><i class="fa-solid fa-microchip"></i> Template Calibration</h3>
+                                <p class="tech-sub">Reference Dataset Configuration</p>
+                            </div>
+                            <span class="status-indicator">READY FOR INGEST</span>
                         </div>
-
                         <div class="panel-body">
                             <div class="instruction-box">
                                 <i class="fa-solid fa-circle-info"></i>
@@ -207,7 +226,6 @@
                 <div class="dashboard-header-tech">
                     <div>
                         <h2><i class="fa-solid fa-video"></i> Video Sources</h2>
-                        <p class="tech-sub">Feed Configuration & Status</p>
                     </div>
                     <button class="btn-tech-primary" onclick="openAddCameraModal()">
                         <i class="fa-solid fa-plus"></i> <span style="margin-left:5px">CONNECT SOURCE</span>
@@ -292,58 +310,7 @@
         </main>
     </div>
 
-    <!-- Inspection / Quick Scan Modal -->
-    <div id="scan-modal" class="modal-tech-overlay">
-        <div class="cv-panel modal-tech-content">
-            <div class="panel-header">
-                <h3><i class="fa-solid fa-crosshairs"></i> Object Inspection System</h3>
-                <span class="close-modal-tech"><i class="fa-solid fa-xmark"></i></span>
-            </div>
 
-            <div class="panel-body">
-                <div class="tech-tabs">
-                    <button class="tech-tab active" data-tab="webcam">
-                        <i class="fa-solid fa-video"></i> LIVE FEED
-                    </button>
-                    <button class="tech-tab" data-tab="upload">
-                        <i class="fa-solid fa-upload"></i> FILE INGEST
-                    </button>
-                </div>
-
-                <div id="tab-webcam" class="tab-content active">
-                    <div class="modal-live-view-tech">
-                        <div class="hud-corners"></div>
-                        <img src="/api/video_feed" alt="Webcam">
-                        <div class="reticle"></div>
-                    </div>
-                    <button class="btn-tech-primary full-width mt-4" onclick="captureAndScan()">
-                        <i class="fa-solid fa-bolt"></i> INITIATE SCAN SEQUENCE
-                    </button>
-                </div>
-
-                <div id="tab-upload" class="tab-content">
-                    <div class="upload-zone tech-border small-upload" id="modal-upload-zone-wrapper">
-                        <div class="scanner-line"></div>
-                        <i class="fa-solid fa-file-import fa-2x"></i>
-                        <p class="mono-text">Select Source Image</p>
-                        <!-- Added label wrapper for custom styling -->
-                        <div class="file-input-wrapper-tech">
-                            <label for="modal-file-upload" class="btn-tech-outline small">BROWSE FILES</label>
-                            <span id="file-name" class="mono-text small">No file selected</span>
-                            <input type="file" id="modal-file-upload" accept="image/*" hidden>
-                        </div>
-                    </div>
-                    <button class="btn-tech-primary full-width mt-4" id="modal-upload-btn" disabled>
-                        <i class="fa-solid fa-magnifying-glass-chart"></i> PROCESS IMAGE
-                    </button>
-                </div>
-
-                <div id="scan-result" class="scan-result-box-tech hidden">
-                    <!-- Result will be shown here -->
-                </div>
-            </div>
-        </div>
-    </div>
 
     <script src="/static/js/admin.js"></script>
 </body>
