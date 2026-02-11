@@ -35,6 +35,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (sectionId === 'templates') loadTemplates();
             if (sectionId === 'camera') loadCameras();
             if (sectionId === 'history') loadHistory();
+            if (sectionId === 'inspection') {
+                // Potential inspection specific init
+            }
         }
     }
 
@@ -72,9 +75,6 @@ document.addEventListener('DOMContentLoaded', function () {
                         <strong>${scan.status}</strong> - ${scan.matched_part || 'Unknown'}
                         <span>${new Date(scan.timestamp).toLocaleString()}</span>
                     </div>
-                    <div class="history-confidence">
-                        ${Math.round(scan.confidence * 100)}%
-                    </div>
                 </div>
             `).join('');
         } catch (error) {
@@ -100,8 +100,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const saveTemplateBtn = document.getElementById('save-template-btn');
     let selectedTemplateFiles = [];
 
-    templateUploadZone.addEventListener('click', () => templateFileInput.click());
-    templateFileInput.addEventListener('change', handleTemplateFiles);
+    if (templateUploadZone) {
+        templateUploadZone.addEventListener('click', () => templateFileInput.click());
+    }
+    if (templateFileInput) {
+        templateFileInput.addEventListener('change', handleTemplateFiles);
+    }
 
     function handleTemplateFiles(e) {
         const files = Array.from(e.target.files);
@@ -125,47 +129,50 @@ document.addEventListener('DOMContentLoaded', function () {
         updateTemplatePreview();
     };
 
-    saveTemplateBtn.addEventListener('click', async () => {
-        const name = prompt("Enter template name (e.g., 'Crankshaft V8'):");
-        if (!name) return;
+    if (saveTemplateBtn) {
+        saveTemplateBtn.addEventListener('click', async () => {
+            const name = prompt("Enter template name (e.g., 'Crankshaft V8'):");
+            if (!name) return;
 
-        const formData = new FormData();
-        selectedTemplateFiles.forEach(file => formData.append('files', file));
+            const formData = new FormData();
+            selectedTemplateFiles.forEach(file => formData.append('files', file));
 
-        saveTemplateBtn.disabled = true;
-        saveTemplateBtn.textContent = "Saving...";
+            saveTemplateBtn.disabled = true;
+            saveTemplateBtn.textContent = "Saving...";
 
-        try {
-            const response = await fetch(`/api/templates?name=${encodeURIComponent(name)}`, {
-                method: 'POST',
-                body: formData
-            });
-            const result = await response.json();
-            if (result.id) {
-                alert("Template saved successfully!");
-                closeTemplateWizard();
-                loadTemplates();
-            } else {
-                alert("Error saving template: " + (result.detail || "Unknown error"));
+            try {
+                const response = await fetch(`/api/templates?name=${encodeURIComponent(name)}`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                if (result.id) {
+                    alert("Template saved successfully!");
+                    closeTemplateWizard();
+                    loadTemplates();
+                } else {
+                    alert("Error saving template: " + (result.detail || "Unknown error"));
+                }
+            } catch (error) {
+                alert("Upload failed. Check console for details.");
+                console.error(error);
+            } finally {
+                saveTemplateBtn.disabled = false;
+                saveTemplateBtn.textContent = "Save Reference Model";
             }
-        } catch (error) {
-            alert("Upload failed. Check console for details.");
-            console.error(error);
-        } finally {
-            saveTemplateBtn.disabled = false;
-            saveTemplateBtn.textContent = "Save Reference Model";
-        }
-    });
+        });
+    }
 
     function resetTemplateWizard() {
         selectedTemplateFiles = [];
-        updateTemplatePreview();
-        templateFileInput.value = '';
+        if (templatePreviewList) updateTemplatePreview();
+        if (templateFileInput) templateFileInput.value = '';
     }
 
     async function loadTemplates() {
         try {
             const container = document.getElementById('registered-templates-container');
+            if (!container) return;
             container.innerHTML = 'Loading...';
             const response = await fetch('/api/templates');
             const data = await response.json();
@@ -241,9 +248,34 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 
+    window.autoDetectCameras = async function () {
+        const resultsEl = document.getElementById('auto-detect-results');
+        resultsEl.classList.remove('hidden');
+        resultsEl.innerHTML = '<div class="alert info">Scanning hardware for vision sensors...</div>';
+
+        try {
+            const response = await fetch('/api/cameras/auto_add', { method: 'POST' });
+            const result = await response.json();
+
+            if (result.success) {
+                if (result.added.length > 0) {
+                    resultsEl.innerHTML = `<div class="alert success">Successfully integrated ${result.added.length} new sensors: ${result.added.join(', ')}</div>`;
+                    loadCameras();
+                } else {
+                    resultsEl.innerHTML = '<div class="alert info">No new vision sensors detected.</div>';
+                }
+            }
+        } catch (error) {
+            resultsEl.innerHTML = '<div class="alert error">Hardware scan failed.</div>';
+        }
+
+        setTimeout(() => resultsEl.classList.add('hidden'), 5000);
+    };
+
     async function loadCameras() {
         try {
             const container = document.getElementById('camera-list-container');
+            if (!container) return;
             const response = await fetch('/api/cameras');
             const data = await response.json();
 
@@ -254,12 +286,14 @@ document.addEventListener('DOMContentLoaded', function () {
                         <span class="status-badge">${c.is_active ? 'Online' : 'Offline'}</span>
                     </div>
                     <div class="camera-info">
-                        <h4>${c.name}</h4>
-                        <p>${c.camera_type.toUpperCase()} - ${c.url}</p>
+                        <h4><i class="fa-solid fa-microchip"></i> ${c.name}</h4>
+                        <p>${c.camera_type.toUpperCase()} Visual Input - ID: ${c.id}</p>
                     </div>
                     <div class="camera-actions">
-                        <button onclick="toggleCamera(${c.id}, ${!c.is_active})">${c.is_active ? 'Disable' : 'Enable'}</button>
-                        <button class="btn-danger" onclick="deleteCamera(${c.id})">Remove</button>
+                        <button class="btn-outline sm" onclick="toggleCamera(${c.id}, ${!c.is_active})">
+                            ${c.is_active ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button class="btn-danger sm" onclick="deleteCamera(${c.id})">Remove</button>
                     </div>
                 </div>
             `).join('');
@@ -278,83 +312,107 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 
-    // ================= QUICK SCAN MODAL =================
-    const scanModal = document.getElementById('scan-modal');
-    const openScanBtn = document.getElementById('open-scan-modal');
-    const closeScanBtn = document.querySelector('#scan-modal .close-modal');
+    // ================= INSPECTION SECTION =================
     const uploadBtn = document.getElementById('modal-upload-btn');
     const fileInput = document.getElementById('modal-file-upload');
     const scanResultBox = document.getElementById('scan-result');
 
-    openScanBtn.onclick = () => scanModal.style.display = 'block';
-    closeScanBtn.onclick = () => {
-        scanModal.style.display = 'none';
-        scanResultBox.classList.add('hidden');
-    };
-
-    // Tabs in Scan Modal
+    // Tabs in Inspection Section
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.onclick = () => {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            const section = btn.closest('.content-section') || document;
+            section.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            section.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById(`tab-${btn.getAttribute('data-tab')}`).classList.add('active');
         };
     });
 
-    fileInput.onchange = (e) => {
-        document.getElementById('file-name').textContent = e.target.files[0]?.name || 'No file chosen';
-        uploadBtn.disabled = !e.target.files[0];
-    };
+    if (fileInput) {
+        fileInput.onchange = (e) => {
+            const fileName = e.target.files[0]?.name || 'No file chosen';
+            const nameEl = document.getElementById('file-name');
+            if (nameEl) nameEl.textContent = fileName;
+
+            const infoBox = document.getElementById('selected-file-info');
+            if (infoBox) infoBox.classList.remove('hidden');
+
+            if (uploadBtn) uploadBtn.disabled = !e.target.files[0];
+        };
+    }
 
     window.captureAndScan = async function () {
-        scanResultBox.classList.remove('hidden');
+        if (!scanResultBox) return;
         scanResultBox.innerHTML = '<div class="loading-spinner">Analyzing Frame...</div>';
+        const startTime = Date.now();
 
         try {
             const response = await fetch('/api/capture_and_scan', { method: 'POST' });
             const result = await response.json();
+            const latency = Date.now() - startTime;
+            document.getElementById('inspection-latency').textContent = `${latency} ms`;
             showScanResult(result);
         } catch (error) {
             scanResultBox.innerHTML = '<div class="error">Failed to capture frame.</div>';
         }
     };
 
-    uploadBtn.onclick = async () => {
-        const file = fileInput.files[0];
-        if (!file) return;
+    if (uploadBtn) {
+        uploadBtn.onclick = async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
 
-        const formData = new FormData();
-        formData.append('file', file);
+            const formData = new FormData();
+            formData.append('file', file);
 
-        scanResultBox.classList.remove('hidden');
-        scanResultBox.innerHTML = '<div class="loading-spinner">Analyzing Uploaded Image...</div>';
+            if (!scanResultBox) return;
+            scanResultBox.innerHTML = '<div class="loading-spinner">Analyzing Uploaded Image...</div>';
+            const startTime = Date.now();
 
-        try {
-            const response = await fetch('/api/scan', {
-                method: 'POST',
-                body: formData
-            });
-            const result = await response.json();
-            showScanResult(result);
-        } catch (error) {
-            scanResultBox.innerHTML = '<div class="error">Analysis failed.</div>';
-        }
-    };
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    body: formData
+                });
+                const result = await response.json();
+                const latency = Date.now() - startTime;
+                document.getElementById('inspection-latency').textContent = `${latency} ms`;
+                showScanResult(result);
+            } catch (error) {
+                scanResultBox.innerHTML = '<div class="error">Analysis failed.</div>';
+            }
+        };
+    }
+
+    function logToConsole(message, type = 'info') {
+        const consoleEl = document.getElementById('cv-console');
+        if (!consoleEl) return;
+
+        const time = new Date().toLocaleTimeString([], { hour12: false });
+        const line = document.createElement('div');
+        line.className = `console-line ${type}-line`;
+        line.innerHTML = `<span class="timestamp">[${time}]</span> <span class="status-${type}">${type.toUpperCase()}</span>: ${message}`;
+
+        consoleEl.appendChild(line);
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
 
     function showScanResult(result) {
+        if (!scanResultBox) return;
         const isPerfect = result.status === 'PERFECT';
+
+        // Detailed logging
+        logToConsole(`Inference cycle complete. Match: ${result.matched_part || 'None'}, Status: ${result.status}`, isPerfect ? 'success' : 'error');
+
         scanResultBox.innerHTML = `
-            <div class="result-header ${result.status.toLowerCase()}">
-                <i class="fa-solid ${isPerfect ? 'fa-check-circle' : 'fa-circle-exclamation'}"></i>
-                <span>Status: ${result.status}</span>
-            </div>
-            <div class="result-body">
-                <p><strong>Part Match:</strong> ${result.matched_part || 'None'}</p>
-                <div class="confidence-bar">
-                    <div class="fill" style="width: ${result.confidence * 100}%"></div>
+            <div class="result-card-inner ${result.status.toLowerCase()}">
+                <div class="result-icon-large">
+                    <i class="fa-solid ${isPerfect ? 'fa-circle-check' : 'fa-circle-xmark'}"></i>
                 </div>
-                <p class="confidence-text">Confidence: ${Math.round(result.confidence * 100)}%</p>
+                <div class="result-details-main">
+                    <h4>${result.status}</h4>
+                    <p>Match: ${result.matched_part || 'N/A'}</p>
+                </div>
             </div>
         `;
         updateStats(); // Refresh dashboard
@@ -364,17 +422,26 @@ document.addEventListener('DOMContentLoaded', function () {
     async function loadHistory() {
         try {
             const tbody = document.getElementById('history-table-body');
+            if (!tbody) return;
             const response = await fetch('/api/history');
             const data = await response.json();
 
-            tbody.innerHTML = data.map(h => `
-                <tr>
-                    <td>#${h.id}</td>
-                    <td>${new Date(h.timestamp).toLocaleString()}</td>
-                    <td><span class="status-tag ${h.status.toLowerCase()}">${h.status}</span></td>
-                    <td><button class="btn-text">View Details</button></td>
+            tbody.innerHTML = data.map(h => {
+                const isPerfect = h.status === 'PERFECT';
+                return `
+                <tr class="${h.status.toLowerCase()}">
+                    <td style="font-weight: 600; color: #888;">#${h.id}</td>
+                    <td>
+                        <div style="font-weight: 500;">${new Date(h.timestamp).toLocaleDateString()}</div>
+                        <div style="font-size: 0.75rem; color: #aaa;">${new Date(h.timestamp).toLocaleTimeString()}</div>
+                    </td>
+                    <td>
+                        <span class="status-tag ${h.status.toLowerCase()}">${h.status}</span>
+                    </td>
+                    <td><span style="font-style: italic; color: #777;">${h.matched_part || 'N/A'}</span></td>
+                    <td><button class="btn-text">Data Sheet</button></td>
                 </tr>
-            `).join('');
+            `}).join('');
         } catch (error) {
             console.error(error);
         }
