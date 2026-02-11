@@ -343,16 +343,28 @@ document.addEventListener('DOMContentLoaded', function () {
 
     window.captureAndScan = async function () {
         if (!scanResultBox) return;
-        scanResultBox.innerHTML = '<div class="loading-spinner">Analyzing Frame...</div>';
+
+        logToConsole("Initiating hardware frame capture...", "info");
+        scanResultBox.innerHTML = `
+            <div class="empty-result">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <p>Decoding Neural Signal...</p>
+            </div>
+        `;
         const startTime = Date.now();
 
         try {
             const response = await fetch('/api/capture_and_scan', { method: 'POST' });
             const result = await response.json();
             const latency = Date.now() - startTime;
-            document.getElementById('inspection-latency').textContent = `${latency} ms`;
+
+            if (document.getElementById('inspection-latency')) {
+                document.getElementById('inspection-latency').textContent = `${latency} ms`;
+            }
+
             showScanResult(result);
         } catch (error) {
+            logToConsole("Frame capture sequence failed.", "error");
             scanResultBox.innerHTML = '<div class="error">Failed to capture frame.</div>';
         }
     };
@@ -362,11 +374,17 @@ document.addEventListener('DOMContentLoaded', function () {
             const file = fileInput.files[0];
             if (!file) return;
 
+            logToConsole(`Transmitting image: ${file.name} to local inference server...`, "info");
             const formData = new FormData();
             formData.append('file', file);
 
             if (!scanResultBox) return;
-            scanResultBox.innerHTML = '<div class="loading-spinner">Analyzing Uploaded Image...</div>';
+            scanResultBox.innerHTML = `
+                <div class="empty-result">
+                    <i class="fa-solid fa-brain fa-pulse"></i>
+                    <p>Processing Neural Input...</p>
+                </div>
+            `;
             const startTime = Date.now();
 
             try {
@@ -376,9 +394,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
                 const result = await response.json();
                 const latency = Date.now() - startTime;
-                document.getElementById('inspection-latency').textContent = `${latency} ms`;
+
+                if (document.getElementById('inspection-latency')) {
+                    document.getElementById('inspection-latency').textContent = `${latency} ms`;
+                }
+
                 showScanResult(result);
             } catch (error) {
+                logToConsole("Static analysis pipeline exception.", "error");
                 scanResultBox.innerHTML = '<div class="error">Analysis failed.</div>';
             }
         };
