@@ -19,12 +19,18 @@ class HuggingFaceClient:
         
     @property
     def client(self):
+        """Lazy client initialization"""
         if self._client is None:
             if not self.space_url:
                 logger.warning("HF_SPACE_URL not set. HuggingFaceClient will be disabled.")
                 return None
             try:
-                self._client = Client(self.space_url, hf_token=self.hf_token)
+                # Set HF token as environment variable if provided
+                if self.hf_token:
+                    os.environ["HF_TOKEN"] = self.hf_token
+                
+                # Initialize client without hf_token parameter
+                self._client = Client(self.space_url)
                 logger.info(f"Connected to HF Space: {self.space_url}")
             except Exception as e:
                 logger.error(f"Failed to connect to HF Space: {e}")
@@ -55,7 +61,7 @@ class HuggingFaceClient:
                 # Clean up temp file
                 try:
                     os.remove(path)
-                except:
+                except Exception:
                     pass
             
             logger.info(f"Template '{name}' saved to HF Space: {last_result}")
@@ -93,6 +99,7 @@ class HuggingFaceClient:
 
     async def delete_template(self, name: str) -> bool:
         """Delete a template from the HF Space"""
+        # Your Gradio app doesn't have a delete endpoint
         logger.warning(f"Delete template '{name}' - endpoint not implemented on HF Space")
         return True
 
@@ -121,7 +128,7 @@ class HuggingFaceClient:
             # Clean up temp file
             try:
                 os.remove(temp_path)
-            except:
+            except Exception:
                 pass
             
             # Parse result
@@ -141,14 +148,14 @@ class HuggingFaceClient:
                     if 'Confidence:' in line or 'confidence:' in line:
                         try:
                             # Extract percentage value
-                            conf_str = line.split(':')[1].strip().replace('%', '')
+                            conf_str = line.split(':')[1].strip().replace('%', '').replace('*', '')
                             confidence = float(conf_str) / 100.0
-                        except:
+                        except Exception:
                             pass
                     if 'Best Match:' in line:
                         try:
-                            best_match = line.split(':')[1].strip()
-                        except:
+                            best_match = line.split(':')[1].strip().replace('*', '')
+                        except Exception:
                             pass
                     if 'MATCHED' in line or '✅' in line:
                         matched = True
