@@ -24,7 +24,7 @@ class HuggingFaceClient:
                 logger.warning("HF_SPACE_URL not set. HuggingFaceClient will be disabled.")
                 return None
             try:
-                self._client = Client(self.space_url, token=self.hf_token)
+                self._client = Client(self.space_url, hf_token=self.hf_token)
                 logger.info(f"Connected to HF Space: {self.space_url}")
             except Exception as e:
                 logger.error(f"Failed to connect to HF Space: {e}")
@@ -38,23 +38,29 @@ class HuggingFaceClient:
         
         try:
             temp_dir = tempfile.gettempdir()
-            # The HF Space /add_template seems to take ONE image at a time
-            # We will send the first one or loop if the space supports it.
-            # Based on the API info, it's (image, part_name)
             
+            # Send each image to add_template endpoint
             last_result = None
             for i, img in enumerate(images):
-                path = os.path.join(temp_dir, f"temp_template_{i}.png")
+                path = os.path.join(temp_dir, f"temp_template_{name}_{i}.png")
                 img.save(path)
                 
-                # Call the Gradio endpoint '/add_template'
+                # Call the correct Gradio endpoint
                 last_result = self.client.predict(
                     image=handle_file(path),
                     part_name=name,
                     api_name="/add_template"
                 )
+                
+                # Clean up temp file
+                try:
+                    os.remove(path)
+                except:
+                    pass
             
+            logger.info(f"Template '{name}' saved to HF Space: {last_result}")
             return {"success": True, "result": last_result}
+            
         except Exception as e:
             logger.error(f"Error saving template to HF: {e}")
             return {"success": False, "error": str(e)}
@@ -65,61 +71,111 @@ class HuggingFaceClient:
             return []
         
         try:
+            # The list_templates function in your Gradio app returns a string
             result = self.client.predict(api_name="/list_templates")
-            # Result is likely a string based on Textbox component
-            # If it's a string, we return it as a list of one item for now or parse it
+            
+            # Parse the string result
             if isinstance(result, str):
-                return [{"name": name.strip()} for name in result.split(",") if name.strip()]
+                # Format: "- template1\n- template2\n..."
+                templates = []
+                for line in result.split('\n'):
+                    line = line.strip()
+                    if line.startswith('- '):
+                        name = line[2:].strip()
+                        if name and name != "No templates saved yet":
+                            templates.append({"name": name})
+                return templates
             return []
+            
         except Exception as e:
             logger.error(f"Error listing templates from HF: {e}")
             return []
 
     async def delete_template(self, name: str) -> bool:
         """Delete a template from the HF Space"""
-        # API info doesn't show a delete endpoint, skip for now
-        logger.warning(f"Delete template '{name}' requested but endpoint not found on HF Space.")
+        logger.warning(f"Delete template '{name}' - endpoint not implemented on HF Space")
         return True
 
     async def detect_part(self, image: Image.Image, threshold: float = 0.7) -> Dict[str, Any]:
         """Run detection on an image using the HF Space model"""
         if not self.client:
-            return {"success": False, "error": "HF Client not initialized", "matched": False, "confidence": 0.0}
+            return {
+                "success": False, 
+                "error": "HF Client not initialized", 
+                "matched": False, 
+                "confidence": 0.0
+            }
         
         try:
             temp_dir = tempfile.gettempdir()
             temp_path = os.path.join(temp_dir, "temp_scan.png")
             image.save(temp_path)
             
-            # /detect_part returns [Textbox, Label]
-            # Label component usually returns a dict with 'label' and 'confidences'
+            # Call the detect endpoint - returns [text_output, label]
             result = self.client.predict(
                 image=handle_file(temp_path),
                 threshold=threshold,
-                api_name="/detect_part"
+                api_name="/detect"
             )
             
-            # result[0] is status text, result[1] is label data
+            # Clean up temp file
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+            
+            # Parse result
+            # result is a tuple/list: [text_output, label_output]
             status_text = result[0] if isinstance(result, (list, tuple)) else str(result)
-            label_data = result[1] if isinstance(result, (list, tuple)) and len(result) > 1 else {}
+            label_data = result[1] if isinstance(result, (list, tuple)) and len(result) > 1 else None
             
-            best_match = label_data.get("label") if isinstance(label_data, dict) else None
-            confidences = label_data.get("confidences", []) if isinstance(label_data, dict) else []
-            
-            # Find the confidence for the best match
+            # Extract confidence from text
             confidence = 0.0
-            if confidences:
-                for c in confidences:
-                    if str(c.get("label")) == str(best_match):
-                        confidence = c.get("confidence", 0.0)
-                        break
+            best_match = None
+            matched = False
             
-            matched = "Perfect" in status_text or "Present" in status_text
+            # Parse the status text for confidence
+            if status_text:
+                lines = status_text.split('\n')
+                for line in lines:
+                    if 'Confidence:' in line or 'confidence:' in line:
+                        try:
+                            # Extract percentage value
+                            conf_str = line.split(':')[1].strip().replace('%', '')
+                            confidence = float(conf_str) / 100.0
+                        except:
+                            pass
+                    if 'Best Match:' in line:
+                        try:
+                            best_match = line.split(':')[1].strip()
+                        except:
+                            pass
+                    if 'MATCHED' in line or '✅' in line:
+                        matched = True
+            
+            # Handle label data if it's a dict
+            if isinstance(label_data, dict):
+                best_match = label_data.get('label', best_match)
+                if 'confidences' in label_data and label_data['confidences']:
+                    # Get the highest confidence
+                    confidence = max([c.get('confidence', 0) for c in label_data['confidences']])
+            
+            logger.info(f"Detection result - Matched: {matched}, Confidence: {confidence:.2%}, Part: {best_match}")
             
             return {
                 "success": True,
                 "matched": matched,
                 "confidence": confidence,
                 "best_match": best_match,
-                "status_text": status_text
+                "status_text": status_text,
+                "all_results": status_text
+            }
+            
+        except Exception as e:
+            logger.error(f"Error during detection on HF: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "matched": False,
+                "confidence": 0.0
             }
