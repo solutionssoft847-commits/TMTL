@@ -3,6 +3,7 @@ import threading
 import logging
 import time
 import os
+from datetime import datetime
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,10 @@ class CameraManager:
                     self.cameras[camera_id] = cap
                     logger.info(f"Camera {camera_id} initialized: {url}")
                 else:
-                    logger.error(f"Failed to open camera {camera_id}: {url}")
+                    if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
+                        logger.warning(f"Could not open camera {camera_id} ({url}) in cloud environment. This is expected.")
+                    else:
+                        logger.error(f"Failed to open camera {camera_id}: {url}")
             except Exception as e:
                 logger.error(f"Error adding camera {camera_id}: {e}")
 
@@ -52,68 +56,91 @@ class CameraManager:
     def capture_frame(self, camera_id: int):
         """Capture a single frame as a numpy array (RGB)"""
         with self.lock:
-            # If requested camera is not active, try to find ANY working camera
-            if camera_id not in self.cameras:
-                # Fallback for environments without physical cameras (like Render/HF)
-                # This prevents hard-blocks/timeouts in headless cloud environments
-                if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
-                    logger.info("Cloud environment detected. Skipping hardware camera scan.")
-                    return None
+            # If requested camera is already open, use it
+            if camera_id in self.cameras:
+                cap = self.cameras[camera_id]
+                ret, frame = cap.read()
+                if ret:
+                    return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-                # Try to auto-initialize index 0 first
+            # If we are in the cloud, provided a simulated frame instead of None
+            if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
+                import numpy as np
+                frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(frame, "SIMULATED CAPTURE", (150, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                # Show timestamp to make it unique
+                cv2.putText(frame, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), (150, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+                return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # Non-cloud auto-discovery logic
+            if camera_id not in self.cameras:
                 if camera_id == 0:
                     self.add_camera(0, "0")
                 
-                # If still not found (or if we want to be robust), check available indices 1-4
                 if camera_id not in self.cameras:
-                    logger.info("Requested camera not found. Scanning for available cameras...")
+                    logger.info("Scanning for available cameras...")
                     for i in range(5):
                         if i in self.cameras:
-                            camera_id = i
-                            break
-                        # Skip if already tried above
+                            camera_id = i; break
                         if i == 0 and 0 not in self.cameras: continue
-
-                        # Try to init
                         self.add_camera(i, str(i))
                         if i in self.cameras:
-                            camera_id = i
-                            logger.info(f"Auto-discovered camera at index {i}")
-                            break
+                            camera_id = i; break
             
-            if camera_id not in self.cameras:
-                return None
-            
-            cap = self.cameras[camera_id]
-            ret, frame = cap.read()
-            if ret:
-                # Convert BGR to RGB for PIL
-                return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            if camera_id in self.cameras:
+                cap = self.cameras[camera_id]
+                ret, frame = cap.read()
+                if ret:
+                    return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             return None
 
     def get_frame(self, camera_id: int) -> Optional[bytes]:
         """Get a frame encoded as JPEG bytes for streaming"""
         with self.lock:
-            if camera_id not in self.cameras:
-                # Skip if in cloud environment
-                if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
-                    return None
-                    
-                # Try to auto-initialize if it's camera 0 (default)
-                if camera_id == 0:
-                    self.add_camera(0, "0")
-                if camera_id not in self.cameras:
-                    return None
-            
-            cap = self.cameras[camera_id]
-            ret, frame = cap.read()
-            if ret:
+            # Try to get real frame first
+            if camera_id in self.cameras:
+                cap = self.cameras[camera_id]
+                ret, frame = cap.read()
+                if ret:
+                    _, buffer = cv2.imencode('.jpg', frame)
+                    return buffer.tobytes()
+
+            # If no real camera, check if we should show a simulator/placeholder
+            if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
+                import numpy as np
+                # Generate a "Simulator" frame
+                frame = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(frame, "CAMERA SIMULATOR ACTIVE", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                cv2.putText(frame, f"SOURCE: {camera_id}", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 1)
+                cv2.putText(frame, "Local hardware unavailable on cloud server", (50, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+                
+                # Add a moving "scan line"
+                t = int(time.time() * 50) % 480
+                cv2.line(frame, (0, t), (640, t), (0, 255, 255), 1)
+                
                 _, buffer = cv2.imencode('.jpg', frame)
                 return buffer.tobytes()
+
+            # Final attempt to auto-init index 0 for non-cloud
+            if camera_id not in self.cameras and camera_id == 0:
+                self.add_camera(0, "0")
+                if 0 in self.cameras:
+                    cap = self.cameras[0]
+                    ret, frame = cap.read()
+                    if ret:
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        return buffer.tobytes()
+
             return None
 
     def test_camera(self, url: str) -> bool:
         """Test if a camera URL is valid and accessible"""
+        # Skip hardware check on cloud environments for local-only URLs
+        if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
+            if url.isdigit() or "localhost" in url or "127.0.0.1" in url:
+                logger.warning(f"Cloud environment detected. Permitting local camera URL '{url}' without hardware test.")
+                return True
+
         try:
             if url.isdigit():
                 cap = cv2.VideoCapture(int(url))

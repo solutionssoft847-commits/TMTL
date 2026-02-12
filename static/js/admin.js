@@ -100,7 +100,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="tech-item-info">
                         <div class="tech-item-main">
                             <i class="fa-solid ${icon}" style="color: ${statusColor}"></i>
-                            ${scan.status}
+                            <span style="color: ${statusColor}; font-weight: 700;">${(scan.status === 'PASS' || scan.status === 'PERFECT') ? 'PASS' : 'FAIL'}</span>
                         </div>
                         <div class="tech-item-time">
                             ${new Date(scan.timestamp).toLocaleTimeString()} | ID: #${scan.matched_part || 'UNIDENTIFIED'}
@@ -374,9 +374,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const isPass = result.status === 'PASS' || result.status === 'PERFECT';
 
         mainScanResultBox.innerHTML = `
-            <div class="tech-result-header ${result.status.toLowerCase() === 'pass' || result.status.toLowerCase() === 'perfect' ? 'pass' : 'fail'}">
+            <div class="tech-result-header ${isPass ? 'pass' : 'fail'}">
                 <i class="fa-solid ${isPass ? 'fa-check-circle' : 'fa-triangle-exclamation'}"></i>
-                <span>${isPass ? 'PASS' : 'FAIL'}</span>
+                <span style="color: ${isPass ? '#0ca678' : '#fa5252'}; font-weight: 800;">${isPass ? 'PASS' : 'FAIL'}</span>
             </div>
             <div class="tech-result-grid">
                 <div>
