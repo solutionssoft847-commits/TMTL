@@ -2,6 +2,7 @@ import cv2
 import threading
 import logging
 import time
+import os
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -53,17 +54,26 @@ class CameraManager:
         with self.lock:
             # If requested camera is not active, try to find ANY working camera
             if camera_id not in self.cameras:
+                # Fallback for environments without physical cameras (like Render/HF)
+                # This prevents hard-blocks/timeouts in headless cloud environments
+                if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
+                    logger.info("Cloud environment detected. Skipping hardware camera scan.")
+                    return None
+
                 # Try to auto-initialize index 0 first
                 if camera_id == 0:
                     self.add_camera(0, "0")
                 
-                # If still not found (or if we want to be robust), check available indices
+                # If still not found (or if we want to be robust), check available indices 1-4
                 if camera_id not in self.cameras:
                     logger.info("Requested camera not found. Scanning for available cameras...")
                     for i in range(5):
                         if i in self.cameras:
                             camera_id = i
                             break
+                        # Skip if already tried above
+                        if i == 0 and 0 not in self.cameras: continue
+
                         # Try to init
                         self.add_camera(i, str(i))
                         if i in self.cameras:
@@ -85,6 +95,10 @@ class CameraManager:
         """Get a frame encoded as JPEG bytes for streaming"""
         with self.lock:
             if camera_id not in self.cameras:
+                # Skip if in cloud environment
+                if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
+                    return None
+                    
                 # Try to auto-initialize if it's camera 0 (default)
                 if camera_id == 0:
                     self.add_camera(0, "0")

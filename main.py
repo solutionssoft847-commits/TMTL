@@ -618,6 +618,7 @@ from datetime import datetime, timedelta
 import io
 from PIL import Image
 import asyncio
+import os
 
 from database import engine, get_db, Base
 from models import InspectionLog, Template, Camera
