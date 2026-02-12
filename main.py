@@ -1,612 +1,3 @@
-# from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks
-# from fastapi.staticfiles import StaticFiles
-# from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
-# from fastapi.middleware.cors import CORSMiddleware
-# from sqlalchemy.orm import Session
-# from typing import List, Optional
-# import logging
-# from datetime import datetime, timedelta
-# import io
-# from PIL import Image
-# import asyncio
-
-# from database import engine, get_db, Base
-# from models import InspectionLog, Template, Camera
-# from schemas import (
-#     InspectionCreate, InspectionResponse, 
-#     TemplateCreate, TemplateResponse,
-#     CameraCreate, CameraResponse, CameraUpdate,
-#     StatsResponse
-# )
-# from hf_client import HuggingFaceClient
-# from camera_manager import CameraManager
-# from utils import convert_image_to_bytes, cleanup_old_files
-
-# # Configure logging
-# logging.basicConfig(level=logging.INFO)
-# logger = logging.getLogger(__name__)
-
-# # Create tables
-# Base.metadata.create_all(bind=engine)
-
-# # Initialize FastAPI
-# app = FastAPI(
-#     title="Engine Part Detection API",
-#     description="AI-powered engine part defect detection system",
-#     version="1.0.0"
-# )
-
-# # CORS Configuration
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=["*"],
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-# # Mount static files
-# app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# # Initialize managers
-# hf_client = HuggingFaceClient()
-# camera_manager = CameraManager()
-
-# # Cleanup task
-# # @app.on_event("startup")
-# # async def startup_event():
-# #     """Initialize services on startup"""
-# #     logger.info("Starting Engine Detection API...")
-    
-# #     # Simple schema synchronization for missing columns
-# #     try:
-# #         from sqlalchemy import text
-# #         with engine.connect() as conn:
-# #             # Table: templates
-# #             cols_templates = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='templates'")).fetchall()
-# #             cols_templates = [c[0] for c in cols_templates]
-            
-# #             if 'name' not in cols_templates:
-# #                 logger.info("Adding 'name' column to 'templates'")
-# #                 conn.execute(text("ALTER TABLE templates ADD COLUMN name VARCHAR(100)"))
-# #                 conn.execute(text("CREATE UNIQUE INDEX ix_templates_name ON templates (name)"))
-            
-# #             if 'image_count' not in cols_templates:
-# #                 logger.info("Adding 'image_count' column to 'templates'")
-# #                 conn.execute(text("ALTER TABLE templates ADD COLUMN image_count INTEGER"))
-
-# #             # Table: cameras
-# #             cols_cameras = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='cameras'")).fetchall()
-# #             cols_cameras = [c[0] for c in cols_cameras]
-            
-# #             if 'camera_type' not in cols_cameras:
-# #                 logger.info("Adding 'camera_type' column to 'cameras'")
-# #                 conn.execute(text("ALTER TABLE cameras ADD COLUMN camera_type VARCHAR(20)"))
-            
-# #             conn.commit()
-# #             logger.info("Database schema sync completed.")
-# #     except Exception as e:
-# #         logger.warning(f"Schema sync warning: {e}")
-
-# #     asyncio.create_task(periodic_cleanup())
-
-# @app.on_event("startup")
-# async def startup_event():
-#     """Initialize services on startup"""
-#     logger.info("Starting Engine Detection API...")
-    
-#     # Database schema migration
-#     try:
-#         from sqlalchemy import text, inspect
-        
-#         with engine.connect() as conn:
-#             inspector = inspect(engine)
-            
-#             # Check templates table
-#             if 'templates' in inspector.get_table_names():
-#                 template_cols = [col['name'] for col in inspector.get_columns('templates')]
-                
-#                 if 'name' not in template_cols:
-#                     logger.info("Adding 'name' column to 'templates'")
-#                     conn.execute(text("ALTER TABLE templates ADD COLUMN name VARCHAR(100)"))
-#                     conn.commit()
-                
-#                 if 'image_count' not in template_cols:
-#                     logger.info("Adding 'image_count' column to 'templates'")
-#                     conn.execute(text("ALTER TABLE templates ADD COLUMN image_count INTEGER DEFAULT 0"))
-#                     conn.commit()
-                
-#                 # Add unique index on name if not exists
-#                 try:
-#                     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_templates_name ON templates (name)"))
-#                     conn.commit()
-#                 except:
-#                     pass
-            
-#             # Check cameras table
-#             if 'cameras' in inspector.get_table_names():
-#                 camera_cols = [col['name'] for col in inspector.get_columns('cameras')]
-                
-#                 if 'camera_type' not in camera_cols:
-#                     logger.info("Adding 'camera_type' column to 'cameras'")
-#                     conn.execute(text("ALTER TABLE cameras ADD COLUMN camera_type VARCHAR(20) DEFAULT 'ip'"))
-#                     conn.commit()
-                
-#                 if 'url' not in camera_cols:
-#                     logger.info("Adding 'url' column to 'cameras'")
-#                     conn.execute(text("ALTER TABLE cameras ADD COLUMN url VARCHAR(500)"))
-#                     conn.commit()
-                
-#                 if 'is_active' not in camera_cols:
-#                     logger.info("Adding 'is_active' column to 'cameras'")
-#                     conn.execute(text("ALTER TABLE cameras ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
-#                     conn.commit()
-            
-#             logger.info("✅ Database schema migration completed")
-            
-#     except Exception as e:
-#         logger.error(f"⚠️ Schema migration error: {e}")
-    
-#     # Start periodic cleanup
-#     asyncio.create_task(periodic_cleanup())
-
-# @app.on_event("shutdown")
-# async def shutdown_event():
-#     """Cleanup on shutdown"""
-#     logger.info("Shutting down...")
-#     camera_manager.release_all()
-
-# async def periodic_cleanup():
-#     """Periodic cleanup of old files and resources"""
-#     while True:
-#         try:
-#             cleanup_old_files()
-#             await asyncio.sleep(3600)  # Every hour
-#         except Exception as e:
-#             logger.error(f"Cleanup error: {e}")
-
-# # ==================== ROUTES ====================
-
-# @app.get("/")
-# async def read_root():
-#     """Serve main dashboard HTML"""
-#     return FileResponse("static/index.html")
-
-# # ==================== DASHBOARD & STATS ====================
-
-# @app.get("/api/stats", response_model=StatsResponse)
-# async def get_stats(db: Session = Depends(get_db)):
-#     """Get dashboard statistics"""
-#     try:
-#         total_scans = db.query(InspectionLog).count()
-#         perfect_count = db.query(InspectionLog).filter(
-#             InspectionLog.status == "PERFECT"
-#         ).count()
-#         defected_count = db.query(InspectionLog).filter(
-#             InspectionLog.status == "DEFECTIVE"
-#         ).count()
-        
-#         return StatsResponse(
-#             total_scans=total_scans,
-#             perfect_count=perfect_count,
-#             defected_count=defected_count
-#         )
-#     except Exception as e:
-#         logger.error(f"Stats error: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/api/history", response_model=List[InspectionResponse])
-# async def get_history(
-#     limit: int = 100,
-#     skip: int = 0,
-#     db: Session = Depends(get_db)
-# ):
-#     """Get inspection history"""
-#     try:
-#         inspections = db.query(InspectionLog)\
-#             .order_by(InspectionLog.timestamp.desc())\
-#             .offset(skip)\
-#             .limit(limit)\
-#             .all()
-#         return inspections
-#     except Exception as e:
-#         logger.error(f"History fetch error: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/api/history/recent")
-# async def get_recent_history(hours: int = 24, db: Session = Depends(get_db)):
-#     """Get recent inspection history"""
-#     try:
-#         cutoff_time = datetime.utcnow() - timedelta(hours=hours)
-#         inspections = db.query(InspectionLog)\
-#             .filter(InspectionLog.timestamp >= cutoff_time)\
-#             .order_by(InspectionLog.timestamp.desc())\
-#             .all()
-        
-#         return [
-#             {
-#                 "id": insp.id,
-#                 "timestamp": insp.timestamp.isoformat(),
-#                 "status": insp.status,
-#                 "confidence": insp.confidence,
-#                 "matched_part": insp.matched_part
-#             }
-#             for insp in inspections
-#         ]
-#     except Exception as e:
-#         logger.error(f"Recent history error: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# # ==================== TEMPLATE MANAGEMENT ====================
-
-# @app.post("/api/templates", response_model=TemplateResponse)
-# async def create_template(
-#     name: str,
-#     files: List[UploadFile] = File(...),
-#     db: Session = Depends(get_db)
-# ):
-#     """Upload template images to HuggingFace Space"""
-#     try:
-#         if len(files) < 3 or len(files) > 10:
-#             raise HTTPException(
-#                 status_code=400,
-#                 detail="Please upload between 3 and 10 template images"
-#             )
-        
-#         # Process images
-#         template_images = []
-#         for file in files:
-#             contents = await file.read()
-#             img = Image.open(io.BytesIO(contents))
-            
-#             # Resize for consistency
-#             img = img.resize((224, 224))
-#             template_images.append(img)
-        
-#         # Send to HuggingFace Space
-#         result = await hf_client.save_template(name, template_images)
-        
-#         if not result.get("success"):
-#             raise HTTPException(
-#                 status_code=500,
-#                 detail=result.get("error", "Failed to save template")
-#             )
-        
-#         # Save to database
-#         db_template = Template(
-#             name=name,
-#             image_count=len(files),
-#             created_at=datetime.utcnow()
-#         )
-#         db.add(db_template)
-#         db.commit()
-#         db.refresh(db_template)
-        
-#         logger.info(f"Template '{name}' created with {len(files)} images")
-#         return db_template
-        
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(f"Template creation error: {e}")
-#         db.rollback()
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/api/templates", response_model=List[TemplateResponse])
-# async def list_templates(db: Session = Depends(get_db)):
-#     """List all templates"""
-#     try:
-#         # Get from HuggingFace
-#         hf_templates = await hf_client.list_templates()
-        
-#         # Sync with database
-#         templates = db.query(Template).all()
-        
-#         return [
-#             {
-#                 "id": t.id,
-#                 "name": t.name,
-#                 "image_count": t.image_count,
-#                 "created_at": t.created_at
-#             }
-#             for t in templates
-#         ]
-#     except Exception as e:
-#         logger.error(f"Template list error: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.delete("/api/templates/{template_id}")
-# async def delete_template(template_id: int, db: Session = Depends(get_db)):
-#     """Delete a template"""
-#     try:
-#         template = db.query(Template).filter(Template.id == template_id).first()
-#         if not template:
-#             raise HTTPException(status_code=404, detail="Template not found")
-        
-#         # Delete from HuggingFace
-#         await hf_client.delete_template(template.name)
-        
-#         # Delete from database
-#         db.delete(template)
-#         db.commit()
-        
-#         return {"message": "Template deleted successfully"}
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(f"Template deletion error: {e}")
-#         db.rollback()
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# # ==================== INSPECTION / DETECTION ====================
-
-# @app.post("/api/scan")
-# async def scan_image(
-#     file: UploadFile = File(...),
-#     threshold: float = 0.7,
-#     background_tasks: BackgroundTasks = BackgroundTasks(),
-#     db: Session = Depends(get_db)
-# ):
-#     """Scan uploaded image for defects"""
-#     try:
-#         # Read and validate image
-#         contents = await file.read()
-#         img = Image.open(io.BytesIO(contents))
-        
-#         # Call HuggingFace detection
-#         result = await hf_client.detect_part(img, threshold)
-        
-#         # Determine status
-#         status = "PERFECT" if result.get("matched") else "DEFECTIVE"
-        
-#         # Log to database
-#         log_entry = InspectionLog(
-#             timestamp=datetime.utcnow(),
-#             status=status,
-#             confidence=result.get("confidence", 0.0),
-#             matched_part=result.get("best_match"),
-#             source="upload"
-#         )
-#         db.add(log_entry)
-#         db.commit()
-        
-#         logger.info(f"Scan completed: {status} (confidence: {result.get('confidence')})")
-        
-#         return {
-#             "success": True,
-#             "status": status,
-#             "confidence": result.get("confidence"),
-#             "matched_part": result.get("best_match"),
-#             "all_results": result.get("all_results", []),
-#             "log_id": log_entry.id
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"Scan error: {e}")
-#         db.rollback()
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.post("/api/capture_and_scan")
-# async def capture_and_scan(
-#     camera_id: Optional[int] = 0,
-#     threshold: float = 0.7,
-#     db: Session = Depends(get_db)
-# ):
-#     """Capture from camera and scan"""
-#     try:
-#         # Capture frame
-#         frame = camera_manager.capture_frame(camera_id)
-#         if frame is None:
-#             raise HTTPException(status_code=500, detail="Failed to capture frame")
-        
-#         # Convert to PIL Image
-#         img = Image.fromarray(frame)
-        
-#         # Detect
-#         result = await hf_client.detect_part(img, threshold)
-        
-#         status = "PERFECT" if result.get("matched") else "DEFECTIVE"
-        
-#         # Log to database
-#         log_entry = InspectionLog(
-#             timestamp=datetime.utcnow(),
-#             status=status,
-#             confidence=result.get("confidence", 0.0),
-#             matched_part=result.get("best_match"),
-#             source=f"camera_{camera_id}"
-#         )
-#         db.add(log_entry)
-#         db.commit()
-        
-#         return {
-#             "success": True,
-#             "status": status,
-#             "confidence": result.get("confidence"),
-#             "matched_part": result.get("best_match"),
-#             "log_id": log_entry.id
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"Capture and scan error: {e}")
-#         db.rollback()
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# # ==================== CAMERA MANAGEMENT ====================
-
-# @app.get("/api/video_feed")
-# async def video_feed(camera_id: int = 0):
-#     """Stream video feed from camera"""
-#     def generate():
-#         while True:
-#             try:
-#                 frame = camera_manager.get_frame(camera_id)
-#                 if frame is not None:
-#                     yield (b'--frame\r\n'
-#                            b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-#                 else:
-#                     break
-#             except Exception as e:
-#                 logger.error(f"Video feed error: {e}")
-#                 break
-    
-#     return StreamingResponse(
-#         generate(),
-#         media_type="multipart/x-mixed-replace; boundary=frame"
-#     )
-
-# @app.post("/api/cameras", response_model=CameraResponse)
-# async def create_camera(camera: CameraCreate, db: Session = Depends(get_db)):
-#     """Add new camera"""
-#     try:
-#         # Test connection
-#         success = camera_manager.test_camera(camera.url)
-#         if not success:
-#             raise HTTPException(
-#                 status_code=400,
-#                 detail="Cannot connect to camera"
-#             )
-        
-#         db_camera = Camera(
-#             name=camera.name,
-#             camera_type=camera.camera_type,
-#             url=camera.url,
-#             is_active=True,
-#             created_at=datetime.utcnow()
-#         )
-#         db.add(db_camera)
-#         db.commit()
-#         db.refresh(db_camera)
-        
-#         # Add to camera manager
-#         camera_manager.add_camera(db_camera.id, camera.url)
-        
-#         logger.info(f"Camera '{camera.name}' added successfully")
-#         return db_camera
-        
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(f"Camera creation error: {e}")
-#         db.rollback()
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.get("/api/cameras", response_model=List[CameraResponse])
-# async def list_cameras(db: Session = Depends(get_db)):
-#     """List all cameras"""
-#     try:
-#         cameras = db.query(Camera).all()
-#         return cameras
-#     except Exception as e:
-#         logger.error(f"Camera list error: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.put("/api/cameras/{camera_id}", response_model=CameraResponse)
-# async def update_camera(
-#     camera_id: int,
-#     camera_update: CameraUpdate,
-#     db: Session = Depends(get_db)
-# ):
-#     """Update camera settings"""
-#     try:
-#         camera = db.query(Camera).filter(Camera.id == camera_id).first()
-#         if not camera:
-#             raise HTTPException(status_code=404, detail="Camera not found")
-        
-#         if camera_update.name:
-#             camera.name = camera_update.name
-#         if camera_update.url:
-#             camera.url = camera_update.url
-#         if camera_update.is_active is not None:
-#             camera.is_active = camera_update.is_active
-        
-#         db.commit()
-#         db.refresh(camera)
-#         return camera
-        
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(f"Camera update error: {e}")
-#         db.rollback()
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.delete("/api/cameras/{camera_id}")
-# async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
-#     """Delete camera"""
-#     try:
-#         camera = db.query(Camera).filter(Camera.id == camera_id).first()
-#         if not camera:
-#             raise HTTPException(status_code=404, detail="Camera not found")
-        
-#         camera_manager.remove_camera(camera_id)
-#         db.delete(camera)
-#         db.commit()
-        
-#         return {"message": "Camera deleted successfully"}
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(f"Camera deletion error: {e}")
-#         db.rollback()
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# @app.post("/api/cameras/test")
-# async def test_camera_connection(url: str):
-#     """Test camera connection"""
-#     try:
-#         success = camera_manager.test_camera(url)
-#         return {"success": success}
-#     except Exception as e:
-#         logger.error(f"Camera test error: {e}")
-#         return {"success": False, "error": str(e)}
-
-# # ==================== EXPORT ====================
-
-# @app.get("/api/export/history")
-# async def export_history(db: Session = Depends(get_db)):
-#     """Export history to CSV"""
-#     try:
-#         import csv
-#         from io import StringIO
-        
-#         inspections = db.query(InspectionLog).order_by(
-#             InspectionLog.timestamp.desc()
-#         ).all()
-        
-#         output = StringIO()
-#         writer = csv.writer(output)
-#         writer.writerow(["ID", "Timestamp", "Status", "Confidence", "Matched Part", "Source"])
-        
-#         for insp in inspections:
-#             writer.writerow([
-#                 insp.id,
-#                 insp.timestamp.isoformat(),
-#                 insp.status,
-#                 insp.confidence,
-#                 insp.matched_part or "N/A",
-#                 insp.source
-#             ])
-        
-#         output.seek(0)
-#         return StreamingResponse(
-#             iter([output.getvalue()]),
-#             media_type="text/csv",
-#             headers={"Content-Disposition": "attachment; filename=inspection_history.csv"}
-#         )
-        
-#     except Exception as e:
-#         logger.error(f"Export error: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
-
-# # Health check
-# @app.get("/health")
-# async def health_check():
-#     """Health check endpoint"""
-#     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
-
-
-
-
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
@@ -616,24 +7,30 @@ from typing import List, Optional
 import logging
 from datetime import datetime, timedelta
 import io
-from PIL import Image
+import time
+from PIL import Image, ImageEnhance
 import asyncio
 import os
+import numpy as np
+import cv2
 
 from database import engine, get_db, Base
 from models import InspectionLog, Template, Camera
 from schemas import (
-    InspectionCreate, InspectionResponse, 
+    InspectionCreate, InspectionResponse,
     TemplateCreate, TemplateResponse,
     CameraCreate, CameraResponse, CameraUpdate,
     StatsResponse
 )
 from hf_client import HuggingFaceClient
-from camera_manager import CameraManager
+from camera_manager import CameraManager, CameraConfig, FrameQuality
 from utils import convert_image_to_bytes, cleanup_old_files
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Create tables
@@ -641,9 +38,9 @@ Base.metadata.create_all(bind=engine)
 
 # Initialize FastAPI
 app = FastAPI(
-    title="Engine Part Detection API",
-    description="AI-powered engine part defect detection system",
-    version="1.0.0"
+    title="Engine Part Detection API - Industrial Grade",
+    description="AI-powered engine part defect detection system with advanced quality control",
+    version="2.0.0"
 )
 
 # CORS Configuration
@@ -660,125 +57,209 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Initialize managers
 hf_client = HuggingFaceClient()
-camera_manager = CameraManager()
+camera_manager = CameraManager(thread_pool_size=4)
 
-# Cleanup task
-# @app.on_event("startup")
-# async def startup_event():
-#     """Initialize services on startup"""
-#     logger.info("Starting Engine Detection API...")
-    
-#     # Simple schema synchronization for missing columns
-#     try:
-#         from sqlalchemy import text
-#         with engine.connect() as conn:
-#             # Table: templates
-#             cols_templates = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='templates'")).fetchall()
-#             cols_templates = [c[0] for c in cols_templates]
-            
-#             if 'name' not in cols_templates:
-#                 logger.info("Adding 'name' column to 'templates'")
-#                 conn.execute(text("ALTER TABLE templates ADD COLUMN name VARCHAR(100)"))
-#                 conn.execute(text("CREATE UNIQUE INDEX ix_templates_name ON templates (name)"))
-            
-#             if 'image_count' not in cols_templates:
-#                 logger.info("Adding 'image_count' column to 'templates'")
-#                 conn.execute(text("ALTER TABLE templates ADD COLUMN image_count INTEGER"))
 
-#             # Table: cameras
-#             cols_cameras = conn.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='cameras'")).fetchall()
-#             cols_cameras = [c[0] for c in cols_cameras]
-            
-#             if 'camera_type' not in cols_cameras:
-#                 logger.info("Adding 'camera_type' column to 'cameras'")
-#                 conn.execute(text("ALTER TABLE cameras ADD COLUMN camera_type VARCHAR(20)"))
-            
-#             conn.commit()
-#             logger.info("Database schema sync completed.")
-#     except Exception as e:
-#         logger.warning(f"Schema sync warning: {e}")
+# ==================== IMAGE PROCESSOR ====================
 
-#     asyncio.create_task(periodic_cleanup())
+class ImageProcessor:
+    """Advanced image preprocessing for industrial quality"""
+
+    @staticmethod
+    def enhance_image(img: Image.Image, auto_adjust: bool = True) -> Image.Image:
+        """Enhance image quality for better detection"""
+        img_array = np.array(img)
+
+        # Auto color correction
+        if auto_adjust:
+            img_array = ImageProcessor._auto_color_correction(img_array)
+
+        # Denoise
+        img_array = cv2.fastNlMeansDenoisingColored(img_array, None, 10, 10, 7, 21)
+
+        # Sharpen
+        kernel = np.array([[-1, -1, -1],
+                           [-1,  9, -1],
+                           [-1, -1, -1]])
+        img_array = cv2.filter2D(img_array, -1, kernel)
+
+        # Convert back to PIL
+        img_enhanced = Image.fromarray(img_array)
+
+        # Enhance contrast and sharpness
+        enhancer = ImageEnhance.Contrast(img_enhanced)
+        img_enhanced = enhancer.enhance(1.2)
+
+        enhancer = ImageEnhance.Sharpness(img_enhanced)
+        img_enhanced = enhancer.enhance(1.3)
+
+        return img_enhanced
+
+    @staticmethod
+    def _auto_color_correction(img: np.ndarray) -> np.ndarray:
+        """Automatic color correction using white balance"""
+        result = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+        avg_a = np.average(result[:, :, 1])
+        avg_b = np.average(result[:, :, 2])
+        result[:, :, 1] = result[:, :, 1] - ((avg_a - 128) * (result[:, :, 0] / 255.0) * 1.1)
+        result[:, :, 2] = result[:, :, 2] - ((avg_b - 128) * (result[:, :, 0] / 255.0) * 1.1)
+        result = cv2.cvtColor(result, cv2.COLOR_LAB2RGB)
+        return result
+
+    @staticmethod
+    def validate_image_quality(img: Image.Image, min_resolution: tuple = (640, 480)) -> tuple:
+        """Validate image meets quality standards"""
+        width, height = img.size
+
+        if width < min_resolution[0] or height < min_resolution[1]:
+            return False, f"Image resolution too low: {width}x{height} (minimum: {min_resolution[0]}x{min_resolution[1]})"
+
+        aspect_ratio = width / height
+        if aspect_ratio < 0.5 or aspect_ratio > 2.0:
+            return False, f"Unusual aspect ratio: {aspect_ratio:.2f}"
+
+        img_array = np.array(img)
+        brightness = np.mean(img_array)
+        if brightness < 30:
+            return False, "Image too dark"
+        if brightness > 225:
+            return False, "Image too bright"
+
+        contrast = np.std(img_array)
+        if contrast < 20:
+            return False, "Image has insufficient contrast"
+
+        return True, "OK"
+
+    @staticmethod
+    def prepare_for_detection(img: Image.Image, target_size: tuple = (224, 224)) -> Image.Image:
+        """Prepare image for AI detection"""
+        img_enhanced = ImageProcessor.enhance_image(img)
+        img_enhanced.thumbnail(target_size, Image.Resampling.LANCZOS)
+
+        # Pad to target size
+        final_img = Image.new('RGB', target_size, (128, 128, 128))
+        paste_x = (target_size[0] - img_enhanced.width) // 2
+        paste_y = (target_size[1] - img_enhanced.height) // 2
+        final_img.paste(img_enhanced, (paste_x, paste_y))
+
+        return final_img
+
+
+image_processor = ImageProcessor()
+
+
+# ==================== STARTUP / SHUTDOWN ====================
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize services on startup"""
-    logger.info("Starting Engine Detection API...")
-    
+    logger.info("=" * 60)
+    logger.info("Starting Engine Detection API - Industrial Grade")
+    logger.info("=" * 60)
+
     # Database schema migration
     try:
-        from sqlalchemy import text, inspect
-        
+        from sqlalchemy import text, inspect as sa_inspect
+
         with engine.connect() as conn:
-            inspector = inspect(engine)
-            
-            # Check templates table
+            inspector = sa_inspect(engine)
+
+            # --- templates table ---
             if 'templates' in inspector.get_table_names():
                 template_cols = [col['name'] for col in inspector.get_columns('templates')]
-                
                 if 'name' not in template_cols:
-                    logger.info("Adding 'name' column to 'templates'")
                     conn.execute(text("ALTER TABLE templates ADD COLUMN name VARCHAR(100)"))
                     conn.commit()
-                
                 if 'image_count' not in template_cols:
-                    logger.info("Adding 'image_count' column to 'templates'")
                     conn.execute(text("ALTER TABLE templates ADD COLUMN image_count INTEGER DEFAULT 0"))
                     conn.commit()
-                
-                # Add unique index on name if not exists
                 try:
                     conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_templates_name ON templates (name)"))
                     conn.commit()
                 except:
                     pass
-            
-            # Check cameras table
+
+            # --- cameras table ---
             if 'cameras' in inspector.get_table_names():
                 camera_cols = [col['name'] for col in inspector.get_columns('cameras')]
-                
-                if 'camera_type' not in camera_cols:
-                    logger.info("Adding 'camera_type' column to 'cameras'")
-                    conn.execute(text("ALTER TABLE cameras ADD COLUMN camera_type VARCHAR(20) DEFAULT 'ip'"))
-                    conn.commit()
-                
-                if 'url' not in camera_cols:
-                    logger.info("Adding 'url' column to 'cameras'")
-                    conn.execute(text("ALTER TABLE cameras ADD COLUMN url VARCHAR(500)"))
-                    conn.commit()
-                
-                if 'is_active' not in camera_cols:
-                    logger.info("Adding 'is_active' column to 'cameras'")
-                    conn.execute(text("ALTER TABLE cameras ADD COLUMN is_active BOOLEAN DEFAULT TRUE"))
-                    conn.commit()
-                
-                if 'last_used' not in camera_cols:
-                    logger.info("Adding 'last_used' column to 'cameras'")
-                    conn.execute(text("ALTER TABLE cameras ADD COLUMN last_used TIMESTAMP"))
-                    conn.commit()
-            
-            logger.info("✅ Database schema migration completed")
-            
+                for col_name, col_def in [
+                    ('camera_type', "VARCHAR(20) DEFAULT 'ip'"),
+                    ('url', "VARCHAR(500)"),
+                    ('is_active', "BOOLEAN DEFAULT TRUE"),
+                    ('last_used', "TIMESTAMP"),
+                ]:
+                    if col_name not in camera_cols:
+                        conn.execute(text(f"ALTER TABLE cameras ADD COLUMN {col_name} {col_def}"))
+                        conn.commit()
+
+            # --- inspection_logs quality columns ---
+            if 'inspection_logs' in inspector.get_table_names():
+                log_cols = [col['name'] for col in inspector.get_columns('inspection_logs')]
+                for col_name in ['quality_score', 'image_brightness', 'image_sharpness']:
+                    if col_name not in log_cols:
+                        conn.execute(text(f"ALTER TABLE inspection_logs ADD COLUMN {col_name} FLOAT"))
+                        conn.commit()
+
+            logger.info("Database schema migration completed")
+
     except Exception as e:
-        logger.error(f"⚠️ Schema migration error: {e}")
-    
-    # Start periodic cleanup
+        logger.error(f"Schema migration error: {e}")
+
+    # Initialize cameras from database
+    try:
+        db = next(get_db())
+        try:
+            cameras = db.query(Camera).filter(Camera.is_active == True).all()
+            for cam in cameras:
+                config = CameraConfig(resolution=(1920, 1080), fps=30, buffer_size=5, warmup_frames=30)
+                camera_manager.add_camera(cam.id, cam.url, config)
+                logger.info(f"Initialized camera {cam.id}: {cam.name}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error initializing cameras: {e}")
+
+    # Start background tasks
     asyncio.create_task(periodic_cleanup())
+    asyncio.create_task(periodic_camera_health_check())
+
+    logger.info("System initialization complete")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("Shutting down...")
     camera_manager.release_all()
+    logger.info("Shutdown complete")
+
 
 async def periodic_cleanup():
-    """Periodic cleanup of old files and resources"""
+    """Periodic cleanup of old temp files"""
     while True:
         try:
             cleanup_old_files()
-            await asyncio.sleep(3600)  # Every hour
+            await asyncio.sleep(3600)
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
+            await asyncio.sleep(3600)
+
+
+async def periodic_camera_health_check():
+    """Periodic health check for all cameras"""
+    while True:
+        try:
+            await asyncio.sleep(300)
+            metrics = camera_manager.get_all_metrics()
+            for camera_id, stats in metrics.items():
+                if stats['success_rate'] < 90:
+                    logger.warning(f"Camera {camera_id} health degraded: {stats['success_rate']:.1f}% success rate")
+                if stats['avg_quality_score'] < 60:
+                    logger.warning(f"Camera {camera_id} quality degraded: {stats['avg_quality_score']:.1f} avg quality")
+        except Exception as e:
+            logger.error(f"Health check error: {e}")
+
 
 # ==================== ROUTES ====================
 
@@ -787,6 +268,7 @@ async def read_root():
     """Serve main dashboard HTML"""
     return FileResponse("static/index.html")
 
+
 # ==================== DASHBOARD & STATS ====================
 
 @app.get("/api/stats", response_model=StatsResponse)
@@ -794,13 +276,9 @@ async def get_stats(db: Session = Depends(get_db)):
     """Get dashboard statistics"""
     try:
         total_scans = db.query(InspectionLog).count()
-        pass_count = db.query(InspectionLog).filter(
-            InspectionLog.status == "PASS"
-        ).count()
-        fail_count = db.query(InspectionLog).filter(
-            InspectionLog.status == "FAIL"
-        ).count()
-        
+        pass_count = db.query(InspectionLog).filter(InspectionLog.status == "PASS").count()
+        fail_count = db.query(InspectionLog).filter(InspectionLog.status == "FAIL").count()
+
         return StatsResponse(
             total_scans=total_scans,
             pass_count=pass_count,
@@ -810,23 +288,19 @@ async def get_stats(db: Session = Depends(get_db)):
         logger.error(f"Stats error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/history", response_model=List[InspectionResponse])
-async def get_history(
-    limit: int = 100,
-    skip: int = 0,
-    db: Session = Depends(get_db)
-):
+async def get_history(limit: int = 100, skip: int = 0, db: Session = Depends(get_db)):
     """Get inspection history"""
     try:
         inspections = db.query(InspectionLog)\
             .order_by(InspectionLog.timestamp.desc())\
-            .offset(skip)\
-            .limit(limit)\
-            .all()
+            .offset(skip).limit(limit).all()
         return inspections
     except Exception as e:
         logger.error(f"History fetch error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/history/recent")
 async def get_recent_history(hours: int = 24, db: Session = Depends(get_db)):
@@ -835,22 +309,23 @@ async def get_recent_history(hours: int = 24, db: Session = Depends(get_db)):
         cutoff_time = datetime.utcnow() - timedelta(hours=hours)
         inspections = db.query(InspectionLog)\
             .filter(InspectionLog.timestamp >= cutoff_time)\
-            .order_by(InspectionLog.timestamp.desc())\
-            .all()
-        
+            .order_by(InspectionLog.timestamp.desc()).all()
+
         return [
             {
                 "id": insp.id,
                 "timestamp": insp.timestamp.isoformat(),
                 "status": insp.status,
                 "confidence": insp.confidence,
-                "matched_part": insp.matched_part
+                "matched_part": insp.matched_part,
+                "quality_score": insp.quality_score
             }
             for insp in inspections
         ]
     except Exception as e:
         logger.error(f"Recent history error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================== TEMPLATE MANAGEMENT ====================
 
@@ -860,46 +335,51 @@ async def create_template(
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
-    """Upload template images to HuggingFace Space"""
+    """Upload template images with quality validation"""
     try:
         if len(files) < 3 or len(files) > 10:
-            raise HTTPException(
-                status_code=400,
-                detail="Please upload between 3 and 10 template images"
-            )
-        
-        # Process images
+            raise HTTPException(status_code=400, detail="Please upload between 3 and 10 template images")
+
         template_images = []
-        for file in files:
+        quality_issues = []
+
+        for idx, file in enumerate(files):
             contents = await file.read()
             img = Image.open(io.BytesIO(contents))
-            
-            # Resize for consistency
-            img = img.resize((224, 224))
-            template_images.append(img)
-        
-        # Send to HuggingFace Space
-        result = await hf_client.save_template(name, template_images)
-        
-        if not result.get("success"):
+
+            is_valid, message = image_processor.validate_image_quality(img)
+            if not is_valid:
+                quality_issues.append(f"Image {idx + 1}: {message}")
+                continue
+
+            img_processed = image_processor.prepare_for_detection(img)
+            template_images.append(img_processed)
+
+        if len(template_images) < 3:
             raise HTTPException(
-                status_code=500,
-                detail=result.get("error", "Failed to save template")
+                status_code=400,
+                detail=f"Not enough valid images. Issues: {'; '.join(quality_issues)}"
             )
-        
-        # Save to database
+
+        result = await hf_client.save_template(name, template_images)
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to save template"))
+
         db_template = Template(
             name=name,
-            image_count=len(files),
+            image_count=len(template_images),
             created_at=datetime.utcnow()
         )
         db.add(db_template)
         db.commit()
         db.refresh(db_template)
-        
-        logger.info(f"Template '{name}' created with {len(files)} images")
+
+        logger.info(f"Template '{name}' created with {len(template_images)} images")
+        if quality_issues:
+            logger.warning(f"Template '{name}' had quality issues: {quality_issues}")
+
         return db_template
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -907,28 +387,20 @@ async def create_template(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/templates", response_model=List[TemplateResponse])
 async def list_templates(db: Session = Depends(get_db)):
     """List all templates"""
     try:
-        # Get from HuggingFace
-        hf_templates = await hf_client.list_templates()
-        
-        # Sync with database
         templates = db.query(Template).all()
-        
         return [
-            {
-                "id": t.id,
-                "name": t.name,
-                "image_count": t.image_count,
-                "created_at": t.created_at
-            }
+            {"id": t.id, "name": t.name, "image_count": t.image_count, "created_at": t.created_at}
             for t in templates
         ]
     except Exception as e:
         logger.error(f"Template list error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.delete("/api/templates/{template_id}")
 async def delete_template(template_id: int, db: Session = Depends(get_db)):
@@ -937,14 +409,12 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
         template = db.query(Template).filter(Template.id == template_id).first()
         if not template:
             raise HTTPException(status_code=404, detail="Template not found")
-        
-        # Delete from HuggingFace
+
         await hf_client.delete_template(template.name)
-        
-        # Delete from database
         db.delete(template)
         db.commit()
-        
+
+        logger.info(f"Template '{template.name}' deleted")
         return {"message": "Template deleted successfully"}
     except HTTPException:
         raise
@@ -953,53 +423,80 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ==================== INSPECTION / DETECTION ====================
 
 @app.post("/api/scan")
 async def scan_image(
     file: UploadFile = File(...),
     threshold: float = 0.92,
-    background_tasks: BackgroundTasks = BackgroundTasks(),
+    enhance: bool = True,
     db: Session = Depends(get_db)
 ):
-    """Scan uploaded image for defects"""
+    """Scan uploaded image with advanced preprocessing"""
     try:
-        # Read and validate image
         contents = await file.read()
         img = Image.open(io.BytesIO(contents))
-        
+
+        # Validate quality
+        is_valid, message = image_processor.validate_image_quality(img)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=f"Image quality insufficient: {message}")
+
+        # Enhance or resize
+        if enhance:
+            img_processed = image_processor.prepare_for_detection(img)
+        else:
+            img_processed = img.resize((224, 224))
+
+        # Assess quality metrics
+        img_array = np.array(img_processed)
+        brightness = float(np.mean(img_array))
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+        sharpness = float(laplacian.var())
+
         # Call HuggingFace detection
-        result = await hf_client.detect_part(img, threshold)
-        
-        # Determine status
+        result = await hf_client.detect_part(img_processed, threshold)
+
         status = "PASS" if result.get("matched") else "FAIL"
-        
+
         # Log to database
         log_entry = InspectionLog(
             timestamp=datetime.utcnow(),
             status=status,
             confidence=result.get("confidence", 0.0),
             matched_part=result.get("best_match"),
-            source="upload"
+            source="upload",
+            quality_score=min(100.0, sharpness / 2),
+            image_brightness=brightness,
+            image_sharpness=sharpness
         )
         db.add(log_entry)
         db.commit()
-        
-        logger.info(f"Scan completed: {status} (confidence: {result.get('confidence')})")
-        
+
+        logger.info(f"Scan completed: {status} (confidence: {result.get('confidence', 0):.3f}, brightness: {brightness:.1f}, sharpness: {sharpness:.1f})")
+
         return {
             "success": True,
             "status": status,
             "confidence": result.get("confidence"),
             "matched_part": result.get("best_match"),
             "all_results": result.get("all_results", []),
-            "log_id": log_entry.id
+            "log_id": log_entry.id,
+            "quality_metrics": {
+                "brightness": round(brightness, 2),
+                "sharpness": round(sharpness, 2)
+            }
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Scan error: {e}")
+        logger.error(f"Scan error: {e}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/capture_and_scan")
 async def capture_and_scan(
@@ -1007,56 +504,93 @@ async def capture_and_scan(
     threshold: float = 0.92,
     db: Session = Depends(get_db)
 ):
-    """Capture from camera and scan"""
+    """Capture from camera and scan - optimized for speed"""
     try:
-        # Capture frame
-        try:
-            frame = camera_manager.capture_frame(camera_id)
-        except Exception as e:
-            logger.error(f"Camera manager capture error: {e}")
-            frame = None
+        start_time = time.time()
 
-        if frame is None:
-            # Fallback for environments without physical cameras (like Render)
+        # Capture frame (quality assessment is lightweight)
+        result = camera_manager.capture_frame(
+            camera_id,
+            validate_quality=False,  # Skip quality gating for speed
+            min_quality_score=0.0
+        )
+
+        if result is None:
             if os.getenv("RENDER") or os.getenv("K_SERVICE"):
                 return {
-                    "success": False, 
-                    "error": "Hardware camera not available in this environment. Please use 'Upload Scan' instead.",
+                    "success": False,
+                    "error": "Hardware camera not available in cloud environment. Please use 'Upload Scan' instead.",
                     "status": "N/A"
                 }
-            raise HTTPException(status_code=500, detail="Failed to capture frame. Ensure camera is connected.")
-        
-        # Convert to PIL Image
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to capture frame. Check camera connection."
+            )
+
+        frame, quality = result
+        capture_time = time.time() - start_time
+
+        # FAST PATH: Convert to PIL and resize only (skip heavy denoising/sharpening)
         img = Image.fromarray(frame)
-        
-        # Detect
-        result = await hf_client.detect_part(img, threshold)
-        
-        status = "PASS" if result.get("matched") else "FAIL"
-        
+        img = img.resize((224, 224), Image.Resampling.LANCZOS)
+
+        # Detect via HF Space
+        detection_result = await hf_client.detect_part(img, threshold)
+        total_time = time.time() - start_time
+
+        status = "PASS" if detection_result.get("matched") else "FAIL"
+
         # Log to database
         log_entry = InspectionLog(
             timestamp=datetime.utcnow(),
             status=status,
-            confidence=result.get("confidence", 0.0),
-            matched_part=result.get("best_match"),
-            source=f"camera_{camera_id}"
+            confidence=detection_result.get("confidence", 0.0),
+            matched_part=detection_result.get("best_match"),
+            source=f"camera_{camera_id}",
+            quality_score=quality.quality_score,
+            image_brightness=quality.brightness,
+            image_sharpness=quality.sharpness
         )
         db.add(log_entry)
         db.commit()
-        
+
+        # Update camera last_used (non-blocking)
+        try:
+            camera_record = db.query(Camera).filter(Camera.id == camera_id).first()
+            if camera_record:
+                camera_record.last_used = datetime.utcnow()
+                db.commit()
+        except:
+            pass
+
+        logger.info(f"Camera scan: {status} | confidence={detection_result.get('confidence', 0):.3f} | capture={capture_time:.2f}s | total={total_time:.2f}s")
+
         return {
             "success": True,
             "status": status,
-            "confidence": result.get("confidence"),
-            "matched_part": result.get("best_match"),
-            "log_id": log_entry.id
+            "confidence": detection_result.get("confidence"),
+            "matched_part": detection_result.get("best_match"),
+            "log_id": log_entry.id,
+            "quality_metrics": {
+                "quality_score": round(quality.quality_score, 2),
+                "brightness": round(quality.brightness, 2),
+                "sharpness": round(quality.sharpness, 2),
+                "contrast": round(quality.contrast, 2),
+                "is_blurred": quality.is_blurred
+            },
+            "timing": {
+                "capture_ms": round(capture_time * 1000),
+                "total_ms": round(total_time * 1000)
+            }
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Capture and scan error: {e}")
+        logger.error(f"Capture and scan error: {e}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # ==================== CAMERA MANAGEMENT ====================
 
@@ -1071,28 +605,29 @@ async def video_feed(camera_id: int = 0):
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
                 else:
-                    break
+                    time.sleep(0.033)  # ~30 FPS
             except Exception as e:
                 logger.error(f"Video feed error: {e}")
                 break
-    
+
     return StreamingResponse(
         generate(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
+
 @app.post("/api/cameras", response_model=CameraResponse)
 async def create_camera(camera: CameraCreate, db: Session = Depends(get_db)):
-    """Add new camera"""
+    """Add new camera with configuration"""
     try:
-        # Test connection
+        # Test connection first
         success = camera_manager.test_camera(camera.url)
         if not success:
             raise HTTPException(
                 status_code=400,
-                detail="Cannot connect to camera"
+                detail="Cannot connect to camera. Please verify the URL and ensure the camera is accessible."
             )
-        
+
         db_camera = Camera(
             name=camera.name,
             camera_type=camera.camera_type,
@@ -1103,59 +638,96 @@ async def create_camera(camera: CameraCreate, db: Session = Depends(get_db)):
         db.add(db_camera)
         db.commit()
         db.refresh(db_camera)
-        
-        # Add to camera manager
-        camera_manager.add_camera(db_camera.id, camera.url)
-        
-        logger.info(f"Camera '{camera.name}' added successfully")
+
+        # Initialize camera with optimal settings
+        config = CameraConfig(resolution=(1920, 1080), fps=30, buffer_size=5, warmup_frames=30)
+        init_success = camera_manager.add_camera(db_camera.id, camera.url, config)
+
+        if not init_success:
+            db.delete(db_camera)
+            db.commit()
+            raise HTTPException(status_code=500, detail="Camera connection succeeded but initialization failed")
+
+        logger.info(f"Camera '{camera.name}' (ID: {db_camera.id}) added successfully")
         return db_camera
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Camera creation error: {e}")
+        logger.error(f"Camera creation error: {e}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/cameras", response_model=List[CameraResponse])
 async def list_cameras(db: Session = Depends(get_db)):
     """List all cameras"""
     try:
-        cameras = db.query(Camera).all()
-        return cameras
+        return db.query(Camera).all()
     except Exception as e:
         logger.error(f"Camera list error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/cameras/{camera_id}/metrics")
+async def get_camera_metrics(camera_id: int):
+    """Get performance metrics for a camera"""
+    try:
+        metrics = camera_manager.get_camera_metrics(camera_id)
+        if metrics is None:
+            raise HTTPException(status_code=404, detail="Camera not found or not initialized")
+        return metrics
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Camera metrics error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/cameras/metrics/all")
+async def get_all_camera_metrics():
+    """Get metrics for all cameras"""
+    try:
+        return camera_manager.get_all_metrics()
+    except Exception as e:
+        logger.error(f"All camera metrics error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.put("/api/cameras/{camera_id}", response_model=CameraResponse)
-async def update_camera(
-    camera_id: int,
-    camera_update: CameraUpdate,
-    db: Session = Depends(get_db)
-):
+async def update_camera(camera_id: int, camera_update: CameraUpdate, db: Session = Depends(get_db)):
     """Update camera settings"""
     try:
         camera = db.query(Camera).filter(Camera.id == camera_id).first()
         if not camera:
             raise HTTPException(status_code=404, detail="Camera not found")
-        
+
         if camera_update.name:
             camera.name = camera_update.name
         if camera_update.url:
+            if not camera_manager.test_camera(camera_update.url):
+                raise HTTPException(status_code=400, detail="New camera URL is not accessible")
             camera.url = camera_update.url
+            config = CameraConfig(resolution=(1920, 1080), fps=30)
+            camera_manager.add_camera(camera_id, camera_update.url, config)
         if camera_update.is_active is not None:
             camera.is_active = camera_update.is_active
-        
+            if not camera_update.is_active:
+                camera_manager.remove_camera(camera_id)
+
         db.commit()
         db.refresh(camera)
+
+        logger.info(f"Camera {camera_id} updated")
         return camera
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Camera update error: {e}")
+        logger.error(f"Camera update error: {e}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.delete("/api/cameras/{camera_id}")
 async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
@@ -1164,11 +736,12 @@ async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
         camera = db.query(Camera).filter(Camera.id == camera_id).first()
         if not camera:
             raise HTTPException(status_code=404, detail="Camera not found")
-        
+
         camera_manager.remove_camera(camera_id)
         db.delete(camera)
         db.commit()
-        
+
+        logger.info(f"Camera {camera_id} deleted")
         return {"message": "Camera deleted successfully"}
     except HTTPException:
         raise
@@ -1177,33 +750,39 @@ async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/cameras/test")
 async def test_camera_connection(url: str):
     """Test camera connection"""
     try:
         success = camera_manager.test_camera(url)
-        return {"success": success}
+        return {
+            "success": success,
+            "message": "Camera connection successful" if success else "Failed to connect to camera"
+        }
     except Exception as e:
         logger.error(f"Camera test error: {e}")
         return {"success": False, "error": str(e)}
+
 
 # ==================== EXPORT ====================
 
 @app.get("/api/export/history")
 async def export_history(db: Session = Depends(get_db)):
-    """Export history to CSV"""
+    """Export history to CSV with quality metrics"""
     try:
         import csv
         from io import StringIO
-        
-        inspections = db.query(InspectionLog).order_by(
-            InspectionLog.timestamp.desc()
-        ).all()
-        
+
+        inspections = db.query(InspectionLog).order_by(InspectionLog.timestamp.desc()).all()
+
         output = StringIO()
         writer = csv.writer(output)
-        writer.writerow(["ID", "Timestamp", "Status", "Confidence", "Matched Part", "Source"])
-        
+        writer.writerow([
+            "ID", "Timestamp", "Status", "Confidence", "Matched Part",
+            "Source", "Quality Score", "Brightness", "Sharpness"
+        ])
+
         for insp in inspections:
             writer.writerow([
                 insp.id,
@@ -1211,22 +790,73 @@ async def export_history(db: Session = Depends(get_db)):
                 insp.status,
                 insp.confidence,
                 insp.matched_part or "N/A",
-                insp.source
+                insp.source,
+                insp.quality_score or "N/A",
+                insp.image_brightness or "N/A",
+                insp.image_sharpness or "N/A"
             ])
-        
+
         output.seek(0)
         return StreamingResponse(
             iter([output.getvalue()]),
             media_type="text/csv",
             headers={"Content-Disposition": "attachment; filename=inspection_history.csv"}
         )
-        
+
     except Exception as e:
         logger.error(f"Export error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Health check
+
+# ==================== HEALTH & MONITORING ====================
+
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    """Comprehensive health check"""
+    try:
+        camera_metrics = camera_manager.get_all_metrics()
+        return {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "cameras": {
+                "total": len(camera_metrics),
+                "metrics": camera_metrics
+            }
+        }
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        return JSONResponse(status_code=503, content={"status": "unhealthy", "error": str(e)})
+
+
+@app.get("/api/system/status")
+async def system_status(db: Session = Depends(get_db)):
+    """Get detailed system status"""
+    try:
+        total_inspections = db.query(InspectionLog).count()
+        total_templates = db.query(Template).count()
+        total_cameras = db.query(Camera).count()
+        active_cameras = db.query(Camera).filter(Camera.is_active == True).count()
+
+        recent = db.query(InspectionLog).order_by(InspectionLog.timestamp.desc()).limit(100).all()
+        recent_pass_rate = 0
+        if recent:
+            passes = sum(1 for log in recent if log.status == "PASS")
+            recent_pass_rate = (passes / len(recent)) * 100
+
+        return {
+            "database": {
+                "total_inspections": total_inspections,
+                "total_templates": total_templates,
+                "total_cameras": total_cameras,
+                "active_cameras": active_cameras
+            },
+            "performance": {
+                "recent_pass_rate": round(recent_pass_rate, 2),
+                "recent_sample_size": len(recent)
+            },
+            "cameras": camera_manager.get_all_metrics(),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"System status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

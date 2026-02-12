@@ -11,6 +11,9 @@ class InspectionLog(Base):
     confidence = Column(Float)
     matched_part = Column(String(100), nullable=True)
     source = Column(String(50))  # upload, camera_0, etc.
+    quality_score = Column(Float, nullable=True)
+    image_brightness = Column(Float, nullable=True)
+    image_sharpness = Column(Float, nullable=True)
     
     def __repr__(self):
         return f"<InspectionLog(id={self.id}, status={self.status})>"

@@ -371,18 +371,28 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     function showMainScanResult(result) {
+        // Handle error responses
+        if (result.error) {
+            mainScanResultBox.innerHTML = `<div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> ${result.error}</div>`;
+            return;
+        }
+
         const isPass = result.status === 'PASS' || result.status === 'PERFECT';
+        const confidence = result.confidence ? (result.confidence * 100).toFixed(1) : '0.0';
+        const timing = result.timing ? `${result.timing.total_ms}ms` : '';
 
         mainScanResultBox.innerHTML = `
             <div class="tech-result-header ${isPass ? 'pass' : 'fail'}">
                 <i class="fa-solid ${isPass ? 'fa-check-circle' : 'fa-triangle-exclamation'}"></i>
                 <span style="color: ${isPass ? '#0ca678' : '#fa5252'}; font-weight: 800;">${isPass ? 'PASS' : 'FAIL'}</span>
+                ${timing ? `<span style="font-size: 0.7rem; color: #adb5bd; margin-left: auto;">${timing}</span>` : ''}
             </div>
             <div class="tech-result-grid">
                 <div>
                     <span class="tech-metric-label">IDENTIFIED OBJECT</span>
                     <span class="tech-metric-value">${result.matched_part || 'UNKNOWN_ENTITY'}</span>
                 </div>
+
             </div>
         `;
         updateStats(); // Refresh dashboard stats
