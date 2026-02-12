@@ -458,28 +458,96 @@ body {
     transform: translateZ(60px) scale(1.1);
 }
 
-.camera-preview {
-    width: 100%;
-    height: 200px;
-    background: #000;
+/* Camera Grid */
+.camera-card {
+    background: white;
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--tech-border);
     position: relative;
+    transform-style: preserve-3d;
+    transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    cursor: pointer;
+    overflow: visible;
 }
 
-.camera-preview img {
+.camera-card:hover {
+    transform: rotateY(5deg) rotateX(2deg) translateY(-5px);
+    box-shadow: 0 20px 40px rgba(92, 124, 250, 0.1);
+    border-color: var(--primary-color);
+}
+
+.camera-header-3d {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    transform: translateZ(20px);
+}
+
+.camera-id-3d {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    color: #adb5bd;
+    font-weight: 700;
+}
+
+.camera-status-3d {
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 6px;
+    text-transform: uppercase;
+}
+
+.camera-status-3d.on {
+    background: #e6fffa;
+    color: var(--success-color);
+    border: 1px solid #c3fae8;
+}
+
+.camera-status-3d.off {
+    background: #fff5f5;
+    color: var(--danger-color);
+    border: 1px solid #ffe3e3;
+}
+
+.camera-preview-3d {
+    height: 180px;
+    background: #000;
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+    transform: translateZ(30px);
+    border: 1px solid var(--tech-border);
+}
+
+.camera-preview-3d img {
     width: 100%;
     height: 100%;
     object-fit: contain;
 }
 
-.status-badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: var(--success-color);
-    color: white;
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: 0.75rem;
+.camera-info-3d h4 {
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+    color: var(--text-main);
+    transform: translateZ(40px);
+}
+
+.camera-info-3d p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 1.25rem;
+    transform: translateZ(20px);
+}
+
+.camera-actions-3d {
+    display: flex;
+    gap: 10px;
+    transform: translateZ(50px);
 }
 
 /* Utilities */

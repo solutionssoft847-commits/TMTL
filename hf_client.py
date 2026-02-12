@@ -122,7 +122,7 @@ class HuggingFaceClient:
             result = self.client.predict(
                 image=handle_file(temp_path),
                 threshold=threshold,
-                api_name="/detect"
+                api_name="/detect_part"
             )
             
             # Clean up temp file

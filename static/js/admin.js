@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
-    function switchSection(sectionId) {
+    async function switchSection(sectionId) {
         document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
         document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
 
@@ -35,6 +35,29 @@ document.addEventListener('DOMContentLoaded', function () {
             if (sectionId === 'templates') loadTemplates();
             if (sectionId === 'camera') loadCameras();
             if (sectionId === 'history') loadHistory();
+
+            // Camera Feed Management
+            const feedImg = document.getElementById('main-inspection-feed');
+            if (sectionId === 'inspection' && feedImg) {
+                try {
+                    const response = await fetch('/api/cameras');
+                    const cameras = await response.json();
+                    const activeCam = cameras.find(c => c.is_active);
+
+                    if (activeCam) {
+                        feedImg.src = `/api/video_feed?camera_id=${activeCam.id}`;
+                        feedImg.dataset.cameraId = activeCam.id;
+                    } else {
+                        feedImg.src = ""; // No active camera
+                        // Consider showing a placeholder
+                    }
+                } catch (e) {
+                    console.error("Error checking cameras:", e);
+                }
+            } else if (feedImg) {
+                // Stop feed by clearing src
+                feedImg.src = "";
+            }
         }
     }
 
@@ -255,23 +278,23 @@ document.addEventListener('DOMContentLoaded', function () {
             const data = await response.json();
 
             container.innerHTML = data.map(c => `
-                <div class="camera-card-tech ${c.is_active ? 'active' : 'inactive'}">
-                    <div class="cam-header">
-                        <span class="cam-id">CAM-${c.id.toString().padStart(2, '0')}</span>
-                        <span class="cam-status ${c.is_active ? 'on' : 'off'}">
+                <div class="camera-card ${c.is_active ? 'active' : 'inactive'}">
+                    <div class="camera-header-3d">
+                        <span class="camera-id-3d">CAM-${c.id.toString().padStart(2, '0')}</span>
+                        <span class="camera-status-3d ${c.is_active ? 'on' : 'off'}">
                              <i class="fa-solid fa-circle"></i> ${c.is_active ? 'ONLINE' : 'OFFLINE'}
                         </span>
                     </div>
-                    <div class="camera-preview-tech">
+                    <div class="camera-preview-3d">
                         <div class="scan-overlay"></div>
                         <img src="/api/video_feed?camera_id=${c.id}" alt="Preview" onerror="this.style.display='none'">
                         <div class="no-signal">NO SIGNAL</div>
                     </div>
-                    <div class="cam-info-tech">
+                    <div class="camera-info-3d">
                         <h4>${c.name}</h4>
-                        <div class="cam-meta">${c.camera_type.toUpperCase()} :: ${c.url}</div>
+                        <p>${c.camera_type.toUpperCase()} :: ${c.url}</p>
                     </div>
-                    <div class="cam-actions-tech">
+                    <div class="camera-actions-3d">
                         <button class="btn-tech-sm" onclick="toggleCamera(${c.id}, ${!c.is_active})">
                            ${c.is_active ? '<i class="fa-solid fa-power-off"></i> DEACTIVATE' : '<i class="fa-solid fa-power-off"></i> ACTIVATE'}
                         </button>
@@ -308,11 +331,14 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     window.captureAndScan = async function () {
+        const feedImg = document.getElementById('main-inspection-feed');
+        const cameraId = feedImg ? (feedImg.dataset.cameraId || 0) : 0;
+
         mainScanResultBox.classList.remove('hidden');
         mainScanResultBox.innerHTML = '<div class="loading-spinner-tech"><i class="fa-solid fa-circle-notch fa-spin"></i> ACQUIRING TARGET...</div>';
 
         try {
-            const response = await fetch('/api/capture_and_scan', { method: 'POST' });
+            const response = await fetch(`/api/capture_and_scan?camera_id=${cameraId}`, { method: 'POST' });
             const result = await response.json();
             showMainScanResult(result);
         } catch (error) {
