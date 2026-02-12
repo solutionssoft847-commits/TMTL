@@ -86,8 +86,8 @@
                     <div class="telemetry-card green-accent">
                         <div class="t-icon"><i class="fa-solid fa-circle-check"></i></div>
                         <div class="t-content">
-                            <span class="t-label">PASSED</span>
-                            <span class="t-value" id="perfect-count">--</span>
+                            <span class="t-label">PASS</span>
+                            <span class="t-value" id="pass-count">--</span>
                         </div>
                         <div class="t-decor"></div>
                     </div>
@@ -95,8 +95,8 @@
                     <div class="telemetry-card red-accent">
                         <div class="t-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
                         <div class="t-content">
-                            <span class="t-label">FAILED</span>
-                            <span class="t-value" id="defected-count">--</span>
+                            <span class="t-label">FAIL</span>
+                            <span class="t-value" id="fail-count">--</span>
                         </div>
                         <div class="t-decor"></div>
                     </div>
@@ -137,7 +137,7 @@
                             </div>
                             <div class="action-bar" style="justify-content: center;">
                                 <button class="btn-tech-primary" style="width: 300px;" onclick="captureAndScan()">
-                                    <i class="fa-solid fa-bolt"></i> INITIATE SCAN SEQUENCE
+                                    <i class="fa-solid fa-bolt"></i> Start Inspection
                                 </button>
                             </div>
                         </div>
@@ -146,7 +146,7 @@
                             <div class="upload-zone tech-border" id="main-upload-zone-wrapper">
                                 <div class="scanner-line"></div>
                                 <i class="fa-solid fa-file-import fa-3x"></i>
-                                <h4>Ready for Data Ingest</h4>
+                                <!-- <h4>Ready for Data Ingest</h4> -->
                                 <p class="mono-text">Select high-resolution sensor captures for analysis</p>
                                 <div class="file-input-wrapper-tech">
                                     <label for="main-file-upload" class="btn-tech-outline">BROWSE SYSTEM FILES</label>
@@ -194,7 +194,7 @@
                         <div class="panel-body">
                             <div class="instruction-box">
                                 <i class="fa-solid fa-circle-info"></i>
-                                <span>Inject 3-10 "Gold Standard" (Perfect) reference images to calibrate the defect
+                                <span>Inject 3-10 "Gold Standard" (Pass) reference images to calibrate the defect
                                     detection algorithm. Consistency is key.</span>
                             </div>
 
@@ -288,6 +288,7 @@
                             </button>
                         </div>
                     </div>
+
 
                     <div class="panel-body p-0">
                         <div class="tech-table-container">

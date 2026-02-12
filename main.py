@@ -793,17 +793,17 @@ async def get_stats(db: Session = Depends(get_db)):
     """Get dashboard statistics"""
     try:
         total_scans = db.query(InspectionLog).count()
-        perfect_count = db.query(InspectionLog).filter(
-            InspectionLog.status == "PERFECT"
+        pass_count = db.query(InspectionLog).filter(
+            InspectionLog.status == "PASS"
         ).count()
-        defected_count = db.query(InspectionLog).filter(
-            InspectionLog.status == "DEFECTIVE"
+        fail_count = db.query(InspectionLog).filter(
+            InspectionLog.status == "FAIL"
         ).count()
         
         return StatsResponse(
             total_scans=total_scans,
-            perfect_count=perfect_count,
-            defected_count=defected_count
+            pass_count=pass_count,
+            fail_count=fail_count
         )
     except Exception as e:
         logger.error(f"Stats error: {e}")
@@ -957,7 +957,7 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
 @app.post("/api/scan")
 async def scan_image(
     file: UploadFile = File(...),
-    threshold: float = 0.7,
+    threshold: float = 0.92,
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db)
 ):
@@ -971,7 +971,7 @@ async def scan_image(
         result = await hf_client.detect_part(img, threshold)
         
         # Determine status
-        status = "PERFECT" if result.get("matched") else "DEFECTIVE"
+        status = "PASS" if result.get("matched") else "FAIL"
         
         # Log to database
         log_entry = InspectionLog(
@@ -1003,7 +1003,7 @@ async def scan_image(
 @app.post("/api/capture_and_scan")
 async def capture_and_scan(
     camera_id: Optional[int] = 0,
-    threshold: float = 0.7,
+    threshold: float = 0.92,
     db: Session = Depends(get_db)
 ):
     """Capture from camera and scan"""
@@ -1031,7 +1031,7 @@ async def capture_and_scan(
         # Detect
         result = await hf_client.detect_part(img, threshold)
         
-        status = "PERFECT" if result.get("matched") else "DEFECTIVE"
+        status = "PASS" if result.get("matched") else "FAIL"
         
         # Log to database
         log_entry = InspectionLog(

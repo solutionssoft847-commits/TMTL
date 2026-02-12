@@ -4,8 +4,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Stats elements
     const totalScansEl = document.getElementById('total-scans');
-    const perfectCountEl = document.getElementById('perfect-count');
-    const defectedCountEl = document.getElementById('defected-count');
+    const passCountEl = document.getElementById('pass-count');
+    const failCountEl = document.getElementById('fail-count');
     const recentHistoryList = document.getElementById('recent-history-list');
 
     // Navigation
@@ -48,8 +48,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         feedImg.src = `/api/video_feed?camera_id=${activeCam.id}`;
                         feedImg.dataset.cameraId = activeCam.id;
                     } else {
-                        feedImg.src = ""; // No active camera
-                        // Consider showing a placeholder
+                        // Fallback: Try camera 0 even if not in DB
+                        console.warn('No active camera found in DB. Attempting to use default system camera (0).');
+                        feedImg.src = `/api/video_feed?camera_id=0`;
+                        feedImg.dataset.cameraId = 0;
                     }
                 } catch (e) {
                     console.error("Error checking cameras:", e);
@@ -70,8 +72,8 @@ document.addEventListener('DOMContentLoaded', function () {
             const response = await fetch('/api/stats');
             const data = await response.json();
             totalScansEl.textContent = data.total_scans;
-            perfectCountEl.textContent = data.perfect_count;
-            defectedCountEl.textContent = data.defected_count;
+            if (passCountEl) passCountEl.textContent = data.pass_count;
+            if (failCountEl) failCountEl.textContent = data.fail_count;
 
             loadRecentHistory();
         } catch (error) {
@@ -90,8 +92,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             recentHistoryList.innerHTML = data.map(scan => {
-                const statusColor = scan.status === 'PERFECT' ? 'var(--success-color)' : 'var(--danger-color)';
-                const icon = scan.status === 'PERFECT' ? 'fa-check-circle' : 'fa-triangle-exclamation';
+                const statusColor = (scan.status === 'PASS' || scan.status === 'PERFECT') ? 'var(--success-color)' : 'var(--danger-color)';
+                const icon = (scan.status === 'PASS' || scan.status === 'PERFECT') ? 'fa-check-circle' : 'fa-triangle-exclamation';
 
                 return `
                 <div class="tech-list-item">
@@ -369,12 +371,12 @@ document.addEventListener('DOMContentLoaded', function () {
     };
 
     function showMainScanResult(result) {
-        const isPerfect = result.status === 'PERFECT';
+        const isPass = result.status === 'PASS' || result.status === 'PERFECT';
 
         mainScanResultBox.innerHTML = `
-            <div class="tech-result-header ${result.status.toLowerCase()}">
-                <i class="fa-solid ${isPerfect ? 'fa-check-circle' : 'fa-triangle-exclamation'}"></i>
-                <span>${result.status}</span>
+            <div class="tech-result-header ${result.status.toLowerCase() === 'pass' || result.status.toLowerCase() === 'perfect' ? 'pass' : 'fail'}">
+                <i class="fa-solid ${isPass ? 'fa-check-circle' : 'fa-triangle-exclamation'}"></i>
+                <span>${isPass ? 'PASS' : 'FAIL'}</span>
             </div>
             <div class="tech-result-grid">
                 <div>
@@ -413,17 +415,21 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            tbody.innerHTML = data.map(h => `
+            tbody.innerHTML = data.map(h => {
+                const status = (h.status === 'PASS' || h.status === 'PERFECT') ? 'PASS' : 'FAIL';
+                const statusClass = status.toLowerCase();
+                return `
                 <tr>
                     <td class="mono-text">#${h.id.toString().padStart(4, '0')}</td>
                     <td>${new Date(h.timestamp).toLocaleString(undefined, {
-                year: 'numeric', month: 'short', day: 'numeric',
-                hour: '2-digit', minute: '2-digit'
-            })}</td>
-                    <td><span class="status-badge-tech ${h.status.toLowerCase()}">${h.status}</span></td>
+                    year: 'numeric', month: 'short', day: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                })}</td>
+                    <td><span class="status-badge-tech ${statusClass}">${status}</span></td>
 
                 </tr>
-            `).join('');
+            `;
+            }).join('');
         } catch (error) {
             console.error(error);
         }

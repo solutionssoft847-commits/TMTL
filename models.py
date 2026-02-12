@@ -7,7 +7,7 @@ class InspectionLog(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
-    status = Column(String(20))  # PERFECT or DEFECTIVE
+    status = Column(String(20))  # PASS or FAIL
     confidence = Column(Float)
     matched_part = Column(String(100), nullable=True)
     source = Column(String(50))  # upload, camera_0, etc.

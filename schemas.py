@@ -54,5 +54,5 @@ class CameraResponse(BaseModel):
 
 class StatsResponse(BaseModel):
     total_scans: int
-    perfect_count: int
-    defected_count: int
+    pass_count: int
+    fail_count: int

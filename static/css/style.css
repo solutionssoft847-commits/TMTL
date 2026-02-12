@@ -225,11 +225,11 @@ body {
     border-left-color: var(--primary-color);
 }
 
-.stat-card.perfect {
+.stat-card.pass {
     border-left-color: var(--success-color);
 }
 
-.stat-card.defected {
+.stat-card.fail {
     border-left-color: var(--danger-color);
 }
 
@@ -248,12 +248,12 @@ body {
     color: var(--primary-color);
 }
 
-.perfect .icon-box {
+.pass .icon-box {
     background: #e8f5e9;
     color: var(--success-color);
 }
 
-.defected .icon-box {
+.fail .icon-box {
     background: #ffebee;
     color: var(--danger-color);
 }
@@ -319,11 +319,11 @@ body {
     border-bottom: none;
 }
 
-.history-item.perfect {
+.history-item.pass {
     border-left: 4px solid var(--success-color);
 }
 
-.history-item.defective {
+.history-item.fail {
     border-left: 4px solid var(--danger-color);
 }
 
@@ -844,14 +844,13 @@ body {
     letter-spacing: 0.5px;
 }
 
-.status-badge-tech.perfect {
+.status-badge-tech.pass {
     background: #e6fffa;
     color: #0ca678;
     border: 1px solid #c3fae8;
 }
 
-.status-badge-tech.defected,
-.status-badge-tech.defective {
+.status-badge-tech.fail {
     background: #fff5f5;
     color: #fa5252;
     border: 1px solid #ffe3e3;
@@ -1436,12 +1435,11 @@ body {
     border-bottom: 2px solid rgba(0, 0, 0, 0.03);
 }
 
-.tech-result-header.perfect {
+.tech-result-header.pass {
     color: #0ca678;
 }
 
-.tech-result-header.defected,
-.tech-result-header.defective {
+.tech-result-header.fail {
     color: #fa5252;
 }
 

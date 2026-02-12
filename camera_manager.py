@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class CameraManager:
     def __init__(self):
         self.cameras: Dict[int, cv2.VideoCapture] = {}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
     def add_camera(self, camera_id: int, url: str):
         """Add and initialize a camera"""
@@ -51,6 +51,26 @@ class CameraManager:
     def capture_frame(self, camera_id: int):
         """Capture a single frame as a numpy array (RGB)"""
         with self.lock:
+            # If requested camera is not active, try to find ANY working camera
+            if camera_id not in self.cameras:
+                # Try to auto-initialize index 0 first
+                if camera_id == 0:
+                    self.add_camera(0, "0")
+                
+                # If still not found (or if we want to be robust), check available indices
+                if camera_id not in self.cameras:
+                    logger.info("Requested camera not found. Scanning for available cameras...")
+                    for i in range(5):
+                        if i in self.cameras:
+                            camera_id = i
+                            break
+                        # Try to init
+                        self.add_camera(i, str(i))
+                        if i in self.cameras:
+                            camera_id = i
+                            logger.info(f"Auto-discovered camera at index {i}")
+                            break
+            
             if camera_id not in self.cameras:
                 return None
             
