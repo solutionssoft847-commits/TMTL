@@ -21,6 +21,14 @@ class CameraManager:
             
             # Handle USB camera index vs RTSP URL
             try:
+                # Cloud Environment: Use Simulator for valid indices
+                if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
+                    # We create a dummy entry in self.cameras (stores None or a flag) to signify it's "active"
+                    # But we don't actually open OpenCV video capture since no hardware exists
+                    self.cameras[camera_id] = "SIMULATOR"
+                    logger.info(f"Cloud environment: Camera {camera_id} initialized as SIMULATOR.")
+                    return
+
                 if url.isdigit():
                     cap = cv2.VideoCapture(int(url))
                 else:
@@ -30,10 +38,7 @@ class CameraManager:
                     self.cameras[camera_id] = cap
                     logger.info(f"Camera {camera_id} initialized: {url}")
                 else:
-                    if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
-                        logger.warning(f"Could not open camera {camera_id} ({url}) in cloud environment. This is expected.")
-                    else:
-                        logger.error(f"Failed to open camera {camera_id}: {url}")
+                    logger.error(f"Failed to open camera {camera_id}: {url}")
             except Exception as e:
                 logger.error(f"Error adding camera {camera_id}: {e}")
 
@@ -59,9 +64,14 @@ class CameraManager:
             # If requested camera is already open, use it
             if camera_id in self.cameras:
                 cap = self.cameras[camera_id]
-                ret, frame = cap.read()
-                if ret:
-                    return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                
+                # Check if it is a simulator placeholder
+                if isinstance(cap, str) and cap == "SIMULATOR":
+                    pass # Fall through to simulator generation below
+                else:
+                    ret, frame = cap.read()
+                    if ret:
+                        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
             # If we are in the cloud, provided a simulated frame instead of None
             if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
@@ -100,10 +110,15 @@ class CameraManager:
             # Try to get real frame first
             if camera_id in self.cameras:
                 cap = self.cameras[camera_id]
-                ret, frame = cap.read()
-                if ret:
-                    _, buffer = cv2.imencode('.jpg', frame)
-                    return buffer.tobytes()
+                
+                # Check for Simulator flag
+                if isinstance(cap, str) and cap == "SIMULATOR":
+                    pass # Fall through to simulator generation
+                else:
+                    ret, frame = cap.read()
+                    if ret:
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        return buffer.tobytes()
 
             # If no real camera, check if we should show a simulator/placeholder
             if os.getenv("RENDER") or os.getenv("K_SERVICE") or os.getenv("SPACE_ID"):
