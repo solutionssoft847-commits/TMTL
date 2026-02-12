@@ -144,8 +144,9 @@
                             <!-- Video feed -->
                             <div class="modal-live-view-tech" style="height: 450px;">
                                 <div class="hud-corners"></div>
-                                <img src="" alt="Camera Feed" id="main-inspection-feed"
-                                    style="width: 100%; height: 100%; object-fit: contain;">
+                                <video id="main-inspection-feed" autoplay playsinline
+                                    style="width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1);"></video>
+                                <canvas id="inspection-capture-canvas" style="display:none;"></canvas>
                                 <div class="reticle"></div>
                             </div>
 
@@ -239,7 +240,8 @@
                 </div>
             </div>
 
-            <div id="camera-section" class="content-section">
+            <!-- Camera Management Section Hidden -->
+            <div id="camera-section" class="content-section" style="display:none !important;">
                 <div class="dashboard-header-tech">
                     <div>
                         <h2><i class="fa-solid fa-video"></i> Video Sources</h2>

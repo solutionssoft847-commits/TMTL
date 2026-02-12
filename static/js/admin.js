@@ -41,7 +41,9 @@ document.addEventListener('DOMContentLoaded', function () {
             // Section-specific data loading
             if (sectionId === 'overview') updateStats();
             if (sectionId === 'templates') loadTemplates();
-            if (sectionId === 'camera') loadCameras();
+            if (sectionId === 'camera') {
+                // loadCameras(); // Disabled
+            }
             if (sectionId === 'history') loadHistory();
 
             // Camera feed management
@@ -54,46 +56,60 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // ================= CAMERA FEED =================
-    function startFeed(cameraId) {
-        if (feedImg) {
-            activeCameraId = cameraId;
-            feedImg.dataset.cameraId = cameraId;
+    // ================= CAMERA FEED (WebRTC) =================
+    let currentStream = null;
 
-            // Clear current source to force reconnection
-            feedImg.src = '';
+    async function startFeed(deviceId) {
+        const videoEl = document.getElementById('main-inspection-feed');
+        if (!videoEl) return;
 
-            // Set up loading visual
+        stopFeed(); // Stop previous stream if any
+
+        try {
             if (cameraStatusIndicator) {
                 cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> INITIALIZING...';
                 cameraStatusIndicator.style.color = '#868e96';
             }
 
-            // Small delay to ensure browser clears the previous connection
-            setTimeout(() => {
-                const feedUrl = `/api/video_feed?camera_id=${cameraId}&t=${Date.now()}`;
-                feedImg.src = feedUrl;
-
-                // For MJPEG streams, the onload doesn't fire reliably in all browsers
-                // so we update the UI to LIVE after setting the src
-                if (cameraStatusIndicator) {
-                    cameraStatusIndicator.innerHTML = `<i class="fa-solid fa-circle"></i> LIVE :: CAM ${cameraId}`;
-                    cameraStatusIndicator.style.color = '#0ca678';
-                }
-            }, 50);
-
-            feedImg.onerror = () => {
-                if (cameraStatusIndicator) {
-                    cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> NO SIGNAL';
-                    cameraStatusIndicator.style.color = '#fa5252';
+            const constraints = {
+                video: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
                 }
             };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            currentStream = stream;
+            videoEl.srcObject = stream;
+
+            // Wait for video to be ready
+            videoEl.onloadedmetadata = () => {
+                videoEl.play();
+                if (cameraStatusIndicator) {
+                    cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-circle"></i> LIVE :: WEB CAM';
+                    cameraStatusIndicator.style.color = '#0ca678';
+                }
+            };
+
+        } catch (err) {
+            console.error("Error accessing camera:", err);
+            if (cameraStatusIndicator) {
+                cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ACCESS DENIED';
+                cameraStatusIndicator.style.color = '#fa5252';
+            }
+            alert("Could not access camera. Please ensure permissions are granted.");
         }
     }
 
     function stopFeed() {
-        if (feedImg) {
-            feedImg.src = '';
+        const videoEl = document.getElementById('main-inspection-feed');
+        if (videoEl) {
+            videoEl.srcObject = null;
+        }
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+            currentStream = null;
         }
     }
 
@@ -101,40 +117,47 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!cameraSelect) return;
 
         try {
-            const response = await fetch('/api/cameras');
-            const cameras = await response.json();
+            // Check permission first
+            await navigator.mediaDevices.getUserMedia({ video: true });
 
-            if (cameras.length === 0) {
-                cameraSelect.innerHTML = '<option value="0">Default Camera (0)</option>';
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+            if (videoDevices.length === 0) {
+                cameraSelect.innerHTML = '<option value="">No cameras found</option>';
                 return;
             }
 
-            // If we have an active camera in DB and current is 0, upgrade to the active one
-            const activeCam = cameras.find(c => c.is_active);
-            if (activeCam && activeCameraId === 0) {
-                activeCameraId = activeCam.id;
+            let options = '';
+            videoDevices.forEach((device, index) => {
+                const label = device.label || `Camera ${index + 1}`;
+                const value = device.deviceId;
+                // Select the first one by default if activeCameraId is 0 or matches
+                const selected = (index === 0) ? 'selected' : '';
+                options += `<option value="${value}" ${selected}>${label}</option>`;
+            });
+
+            cameraSelect.innerHTML = options;
+
+            // Start the first camera automatically
+            if (videoDevices.length > 0) {
+                startFeed(videoDevices[0].deviceId);
             }
 
-            // Build options
-            let options = '<option value="0">Default Camera (0)</option>';
-            cameras.forEach(cam => {
-                const selected = cam.id === activeCameraId ? 'selected' : '';
-                options += `<option value="${cam.id}" ${selected}>${cam.name} (ID: ${cam.id})</option>`;
-            });
-            cameraSelect.innerHTML = options;
-            cameraSelect.value = activeCameraId;
-
         } catch (e) {
-            console.error('Error loading cameras for selector:', e);
+            console.error('Error listing cameras:', e);
+            cameraSelect.innerHTML = '<option value="">Camera access required</option>';
         }
     }
 
     // Camera selector change handler
     if (cameraSelect) {
-        cameraSelect.addEventListener('change', (e) => {
-            const newId = parseInt(e.target.value);
-            startFeed(newId);
-        });
+        if (cameraSelect) {
+            cameraSelect.addEventListener('change', (e) => {
+                const newDeviceId = e.target.value;
+                startFeed(newDeviceId);
+            });
+        }
     }
 
     // ================= STATS & OVERVIEW =================
@@ -194,9 +217,13 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // ================= INSPECTION: CAPTURE & SCAN =================
+    // ================= INSPECTION: CAPTURE & SCAN (Frontend) =================
     window.captureAndScan = async function () {
-        const cameraId = cameraSelect ? cameraSelect.value : activeCameraId;
+        const videoEl = document.getElementById('main-inspection-feed');
+        const canvas = document.getElementById('inspection-capture-canvas');
         const btn = document.getElementById('btn-start-inspection');
+
+        if (!videoEl || !canvas) return;
 
         // Show loading
         mainScanResultBox.classList.remove('hidden');
@@ -208,16 +235,46 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         try {
-            const response = await fetch(`/api/capture_and_scan?camera_id=${cameraId}`, { method: 'POST' });
-            const result = await response.json();
-            showScanResult(result);
+            // Capture frame from video to canvas
+            canvas.width = videoEl.videoWidth;
+            canvas.height = videoEl.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+
+            // Convert canvas to blob
+            canvas.toBlob(async (blob) => {
+                if (!blob) {
+                    mainScanResultBox.innerHTML = '<div class="error-msg">Failed to capture frame.</div>';
+                    btn.disabled = false;
+                    return;
+                }
+
+                const formData = new FormData();
+                formData.append('file', blob, 'capture.jpg');
+                formData.append('enhance', 'true'); // Optional: ask backend to enhance
+
+                try {
+                    // Use the existing file upload endpoint
+                    const response = await fetch('/api/scan', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+                    showScanResult(result);
+                } catch (error) {
+                    mainScanResultBox.innerHTML = '<div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> Analysis failed.</div>';
+                } finally {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Start Inspection';
+                    }
+                }
+            }, 'image/jpeg', 0.95);
+
         } catch (error) {
-            mainScanResultBox.innerHTML = '<div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> Capture failed. Check camera connection.</div>';
-        } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Start Inspection';
-            }
+            console.error(error);
+            mainScanResultBox.innerHTML = '<div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> Capture failed.</div>';
+            if (btn) btn.disabled = false;
         }
     };
 

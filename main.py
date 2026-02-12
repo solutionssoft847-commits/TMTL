@@ -23,41 +23,11 @@ from schemas import (
     StatsResponse
 )
 from hf_client import HuggingFaceClient
-from camera_manager import CameraManager, CameraConfig, FrameQuality
-from utils import convert_image_to_bytes, cleanup_old_files
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Create tables
-Base.metadata.create_all(bind=engine)
-
-# Initialize FastAPI
-app = FastAPI(
-    title="Engine Part Detection API - Industrial Grade",
-    description="AI-powered engine part defect detection system with advanced quality control",
-    version="2.0.0"
-)
-
-# CORS Configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# from camera_manager import CameraManager, CameraConfig, FrameQuality
 
 # Initialize managers
 hf_client = HuggingFaceClient()
-camera_manager = CameraManager(thread_pool_size=4)
+# camera_manager = CameraManager(thread_pool_size=4)
 
 
 # ==================== IMAGE PROCESSOR ====================
@@ -181,17 +151,17 @@ async def startup_event():
                     pass
 
             # --- cameras table ---
-            if 'cameras' in inspector.get_table_names():
-                camera_cols = [col['name'] for col in inspector.get_columns('cameras')]
-                for col_name, col_def in [
-                    ('camera_type', "VARCHAR(20) DEFAULT 'ip'"),
-                    ('url', "VARCHAR(500)"),
-                    ('is_active', "BOOLEAN DEFAULT TRUE"),
-                    ('last_used', "TIMESTAMP"),
-                ]:
-                    if col_name not in camera_cols:
-                        conn.execute(text(f"ALTER TABLE cameras ADD COLUMN {col_name} {col_def}"))
-                        conn.commit()
+            # if 'cameras' in inspector.get_table_names():
+            #     camera_cols = [col['name'] for col in inspector.get_columns('cameras')]
+            #     for col_name, col_def in [
+            #         ('camera_type', "VARCHAR(20) DEFAULT 'ip'"),
+            #         ('url', "VARCHAR(500)"),
+            #         ('is_active', "BOOLEAN DEFAULT TRUE"),
+            #         ('last_used', "TIMESTAMP"),
+            #     ]:
+            #         if col_name not in camera_cols:
+            #             conn.execute(text(f"ALTER TABLE cameras ADD COLUMN {col_name} {col_def}"))
+            #             conn.commit()
 
             # --- inspection_logs quality columns ---
             if 'inspection_logs' in inspector.get_table_names():
@@ -207,22 +177,22 @@ async def startup_event():
         logger.error(f"Schema migration error: {e}")
 
     # Initialize cameras from database
-    try:
-        db = next(get_db())
-        try:
-            cameras = db.query(Camera).filter(Camera.is_active == True).all()
-            for cam in cameras:
-                config = CameraConfig(resolution=(1920, 1080), fps=30, buffer_size=5, warmup_frames=30)
-                camera_manager.add_camera(cam.id, cam.url, config)
-                logger.info(f"Initialized camera {cam.id}: {cam.name}")
-        finally:
-            db.close()
-    except Exception as e:
-        logger.error(f"Error initializing cameras: {e}")
+    # try:
+    #     db = next(get_db())
+    #     try:
+    #         cameras = db.query(Camera).filter(Camera.is_active == True).all()
+    #         for cam in cameras:
+    #             config = CameraConfig(resolution=(1920, 1080), fps=30, buffer_size=5, warmup_frames=30)
+    #             camera_manager.add_camera(cam.id, cam.url, config)
+    #             logger.info(f"Initialized camera {cam.id}: {cam.name}")
+    #     finally:
+    #         db.close()
+    # except Exception as e:
+    #     logger.error(f"Error initializing cameras: {e}")
 
     # Start background tasks
     asyncio.create_task(periodic_cleanup())
-    asyncio.create_task(periodic_camera_health_check())
+    # asyncio.create_task(periodic_camera_health_check())
 
     logger.info("System initialization complete")
 
@@ -231,7 +201,7 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("Shutting down...")
-    camera_manager.release_all()
+    # camera_manager.release_all()
     logger.info("Shutdown complete")
 
 
@@ -246,19 +216,19 @@ async def periodic_cleanup():
             await asyncio.sleep(3600)
 
 
-async def periodic_camera_health_check():
-    """Periodic health check for all cameras"""
-    while True:
-        try:
-            await asyncio.sleep(300)
-            metrics = camera_manager.get_all_metrics()
-            for camera_id, stats in metrics.items():
-                if stats['success_rate'] < 90:
-                    logger.warning(f"Camera {camera_id} health degraded: {stats['success_rate']:.1f}% success rate")
-                if stats['avg_quality_score'] < 60:
-                    logger.warning(f"Camera {camera_id} quality degraded: {stats['avg_quality_score']:.1f} avg quality")
-        except Exception as e:
-            logger.error(f"Health check error: {e}")
+# async def periodic_camera_health_check():
+#     """Periodic health check for all cameras"""
+#     while True:
+#         try:
+#             await asyncio.sleep(300)
+#             metrics = camera_manager.get_all_metrics()
+#             for camera_id, stats in metrics.items():
+#                 if stats['success_rate'] < 90:
+#                     logger.warning(f"Camera {camera_id} health degraded: {stats['success_rate']:.1f}% success rate")
+#                 if stats['avg_quality_score'] < 60:
+#                     logger.warning(f"Camera {camera_id} quality degraded: {stats['avg_quality_score']:.1f} avg quality")
+#         except Exception as e:
+#             logger.error(f"Health check error: {e}")
 
 
 # ==================== ROUTES ====================
@@ -498,277 +468,286 @@ async def scan_image(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/capture_and_scan")
-async def capture_and_scan(
-    camera_id: Optional[int] = 0,
-    threshold: float = 0.92,
-    db: Session = Depends(get_db)
-):
-    """Capture from camera and scan - optimized for speed"""
-    try:
-        start_time = time.time()
-
-        # Capture frame (quality assessment is lightweight)
-        result = camera_manager.capture_frame(
-            camera_id,
-            validate_quality=False,  # Skip quality gating for speed
-            min_quality_score=0.0
-        )
-
-        if result is None:
-            if os.getenv("RENDER") or os.getenv("K_SERVICE"):
-                return {
-                    "success": False,
-                    "error": "Hardware camera not available in cloud environment. Please use 'Upload Scan' instead.",
-                    "status": "N/A"
-                }
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to capture frame. Check camera connection."
-            )
-
-        frame, quality = result
-        capture_time = time.time() - start_time
-
-        # FAST PATH: Convert to PIL and resize only (skip heavy denoising/sharpening)
-        img = Image.fromarray(frame)
-        img = img.resize((224, 224), Image.Resampling.LANCZOS)
-
-        # Detect via HF Space
-        detection_result = await hf_client.detect_part(img, threshold)
-        total_time = time.time() - start_time
-
-        status = "PASS" if detection_result.get("matched") else "FAIL"
-
-        # Log to database
-        log_entry = InspectionLog(
-            timestamp=datetime.utcnow(),
-            status=status,
-            confidence=detection_result.get("confidence", 0.0),
-            matched_part=detection_result.get("best_match"),
-            source=f"camera_{camera_id}",
-            quality_score=quality.quality_score,
-            image_brightness=quality.brightness,
-            image_sharpness=quality.sharpness
-        )
-        db.add(log_entry)
-        db.commit()
-
-        # Update camera last_used (non-blocking)
-        try:
-            camera_record = db.query(Camera).filter(Camera.id == camera_id).first()
-            if camera_record:
-                camera_record.last_used = datetime.utcnow()
-                db.commit()
-        except:
-            pass
-
-        logger.info(f"Camera scan: {status} | confidence={detection_result.get('confidence', 0):.3f} | capture={capture_time:.2f}s | total={total_time:.2f}s")
-
-        return {
-            "success": True,
-            "status": status,
-            "confidence": detection_result.get("confidence"),
-            "matched_part": detection_result.get("best_match"),
-            "log_id": log_entry.id,
-            "quality_metrics": {
-                "quality_score": round(quality.quality_score, 2),
-                "brightness": round(quality.brightness, 2),
-                "sharpness": round(quality.sharpness, 2),
-                "contrast": round(quality.contrast, 2),
-                "is_blurred": quality.is_blurred
-            },
-            "timing": {
-                "capture_ms": round(capture_time * 1000),
-                "total_ms": round(total_time * 1000)
-            }
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Capture and scan error: {e}", exc_info=True)
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==================== CAMERA MANAGEMENT ====================
-
-@app.get("/api/video_feed")
-async def video_feed(camera_id: int = 0):
-    """Stream video feed from camera"""
-    def generate():
-        while True:
-            try:
-                frame = camera_manager.get_frame(camera_id)
-                if frame is not None:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-                else:
-                    time.sleep(0.033)  # ~30 FPS
-            except Exception as e:
-                logger.error(f"Video feed error: {e}")
-                break
-
-    return StreamingResponse(
-        generate(),
-        media_type="multipart/x-mixed-replace; boundary=frame",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-            "X-Accel-Buffering": "no"
-        }
-    )
+# @app.post("/api/capture_and_scan")
+# async def capture_and_scan(
+#     camera_id: Optional[int] = 0,
+#     threshold: float = 0.92,
+#     db: Session = Depends(get_db)
+# ):
+#     """Capture from camera and scan - optimized for speed"""
+#     try:
+#         start_time = time.time()
+#
+#         # Capture frame (quality assessment is lightweight)
+#         # result = camera_manager.capture_frame(
+#         #     camera_id,
+#         #     validate_quality=False,  # Skip quality gating for speed
+#         #     min_quality_score=0.0
+#         # )
+#
+#         # if result is None:
+#         #     if os.getenv("RENDER") or os.getenv("K_SERVICE"):
+#         #         return {
+#         #             "success": False,
+#         #             "error": "Hardware camera not available in cloud environment. Please use 'Upload Scan' instead.",
+#         #             "status": "N/A"
+#         #         }
+#         #     raise HTTPException(
+#         #         status_code=500,
+#         #         detail="Failed to capture frame. Check camera connection."
+#         #     )
+#
+#         # frame, quality = result
+#         # capture_time = time.time() - start_time
+#
+#         # # FAST PATH: Convert to PIL and resize only (skip heavy denoising/sharpening)
+#         # img = Image.fromarray(frame)
+#         # img = img.resize((224, 224), Image.Resampling.LANCZOS)
+#
+#         # # Detect via HF Space
+#         # detection_result = await hf_client.detect_part(img, threshold)
+#         # total_time = time.time() - start_time
+#
+#         # status = "PASS" if detection_result.get("matched") else "FAIL"
+#
+#         # # Log to database
+#         # log_entry = InspectionLog(
+#         #     timestamp=datetime.utcnow(),
+#         #     status=status,
+#         #     confidence=detection_result.get("confidence", 0.0),
+#         #     matched_part=detection_result.get("best_match"),
+#         #     source=f"camera_{camera_id}",
+#         #     quality_score=quality.quality_score,
+#         #     image_brightness=quality.brightness,
+#         #     image_sharpness=quality.sharpness
+#         # )
+#         # db.add(log_entry)
+#         # db.commit()
+#
+#         # # Update camera last_used (non-blocking)
+#         # try:
+#         #     camera_record = db.query(Camera).filter(Camera.id == camera_id).first()
+#         #     if camera_record:
+#         #         camera_record.last_used = datetime.utcnow()
+#         #         db.commit()
+#         # except:
+#         #     pass
+#
+#         # logger.info(f"Camera scan: {status} | confidence={detection_result.get('confidence', 0):.3f} | capture={capture_time:.2f}s | total={total_time:.2f}s")
+#
+#         # return {
+#         #     "success": True,
+#         #     "status": status,
+#         #     "confidence": detection_result.get("confidence"),
+#         #     "matched_part": detection_result.get("best_match"),
+#         #     "log_id": log_entry.id,
+#         #     "quality_metrics": {
+#         #         "quality_score": round(quality.quality_score, 2),
+#         #         "brightness": round(quality.brightness, 2),
+#         #         "sharpness": round(quality.sharpness, 2),
+#         #         "contrast": round(quality.contrast, 2),
+#         #         "is_blurred": quality.is_blurred
+#         #     },
+#         #     "timing": {
+#         #         "capture_ms": round(capture_time * 1000),
+#         #         "total_ms": round(total_time * 1000)
+#         #     }
+#         # }
+#         pass
+#
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Capture and scan error: {e}", exc_info=True)
+#         db.rollback()
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/api/cameras", response_model=CameraResponse)
-async def create_camera(camera: CameraCreate, db: Session = Depends(get_db)):
-    """Add new camera with configuration"""
-    try:
-        # Test connection first
-        success = camera_manager.test_camera(camera.url)
-        if not success:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot connect to camera. Please verify the URL and ensure the camera is accessible."
-            )
-
-        db_camera = Camera(
-            name=camera.name,
-            camera_type=camera.camera_type,
-            url=camera.url,
-            is_active=True,
-            created_at=datetime.utcnow()
-        )
-        db.add(db_camera)
-        db.commit()
-        db.refresh(db_camera)
-
-        # Initialize camera with optimal settings
-        config = CameraConfig(resolution=(1920, 1080), fps=30, buffer_size=5, warmup_frames=30)
-        init_success = camera_manager.add_camera(db_camera.id, camera.url, config)
-
-        if not init_success:
-            db.delete(db_camera)
-            db.commit()
-            raise HTTPException(status_code=500, detail="Camera connection succeeded but initialization failed")
-
-        logger.info(f"Camera '{camera.name}' (ID: {db_camera.id}) added successfully")
-        return db_camera
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Camera creation error: {e}", exc_info=True)
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/cameras", response_model=List[CameraResponse])
-async def list_cameras(db: Session = Depends(get_db)):
-    """List all cameras"""
-    try:
-        return db.query(Camera).all()
-    except Exception as e:
-        logger.error(f"Camera list error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/cameras/{camera_id}/metrics")
-async def get_camera_metrics(camera_id: int):
-    """Get performance metrics for a camera"""
-    try:
-        metrics = camera_manager.get_camera_metrics(camera_id)
-        if metrics is None:
-            raise HTTPException(status_code=404, detail="Camera not found or not initialized")
-        return metrics
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Camera metrics error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/cameras/metrics/all")
-async def get_all_camera_metrics():
-    """Get metrics for all cameras"""
-    try:
-        return camera_manager.get_all_metrics()
-    except Exception as e:
-        logger.error(f"All camera metrics error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.put("/api/cameras/{camera_id}", response_model=CameraResponse)
-async def update_camera(camera_id: int, camera_update: CameraUpdate, db: Session = Depends(get_db)):
-    """Update camera settings"""
-    try:
-        camera = db.query(Camera).filter(Camera.id == camera_id).first()
-        if not camera:
-            raise HTTPException(status_code=404, detail="Camera not found")
-
-        if camera_update.name:
-            camera.name = camera_update.name
-        if camera_update.url:
-            if not camera_manager.test_camera(camera_update.url):
-                raise HTTPException(status_code=400, detail="New camera URL is not accessible")
-            camera.url = camera_update.url
-            config = CameraConfig(resolution=(1920, 1080), fps=30)
-            camera_manager.add_camera(camera_id, camera_update.url, config)
-        if camera_update.is_active is not None:
-            camera.is_active = camera_update.is_active
-            if not camera_update.is_active:
-                camera_manager.remove_camera(camera_id)
-
-        db.commit()
-        db.refresh(camera)
-
-        logger.info(f"Camera {camera_id} updated")
-        return camera
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Camera update error: {e}", exc_info=True)
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/cameras/{camera_id}")
-async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
-    """Delete camera"""
-    try:
-        camera = db.query(Camera).filter(Camera.id == camera_id).first()
-        if not camera:
-            raise HTTPException(status_code=404, detail="Camera not found")
-
-        camera_manager.remove_camera(camera_id)
-        db.delete(camera)
-        db.commit()
-
-        logger.info(f"Camera {camera_id} deleted")
-        return {"message": "Camera deleted successfully"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Camera deletion error: {e}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/cameras/test")
-async def test_camera_connection(url: str):
-    """Test camera connection"""
-    try:
-        success = camera_manager.test_camera(url)
-        return {
-            "success": success,
-            "message": "Camera connection successful" if success else "Failed to connect to camera"
-        }
-    except Exception as e:
-        logger.error(f"Camera test error: {e}")
-        return {"success": False, "error": str(e)}
+# # ==================== CAMERA MANAGEMENT ====================
+#
+# @app.get("/api/video_feed")
+# async def video_feed(camera_id: int = 0):
+#     """Stream video feed from camera"""
+#     # def generate():
+#     #     while True:
+#     #         try:
+#     #             frame = camera_manager.get_frame(camera_id)
+#     #             if frame is not None:
+#     #                 yield (b'--frame\r\n'
+#     #                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+#     #             else:
+#     #                 time.sleep(0.033)  # ~30 FPS
+#     #         except Exception as e:
+#     #             logger.error(f"Video feed error: {e}")
+#     #             break
+#
+#     # return StreamingResponse(
+#     #     generate(),
+#     #     media_type="multipart/x-mixed-replace; boundary=frame",
+#     #     headers={
+#     #         "Cache-Control": "no-cache, no-store, must-revalidate",
+#     #         "Pragma": "no-cache",
+#     #         "Expires": "0",
+#     #         "X-Accel-Buffering": "no"
+#     #     }
+#     # )
+#     return {"message": "Video feed disabled"}
+#
+#
+# @app.post("/api/cameras", response_model=CameraResponse)
+# async def create_camera(camera: CameraCreate, db: Session = Depends(get_db)):
+#     """Add new camera with configuration"""
+#     # try:
+#     #     # Test connection first
+#     #     success = camera_manager.test_camera(camera.url)
+#     #     if not success:
+#     #         raise HTTPException(
+#     #             status_code=400,
+#     #             detail="Cannot connect to camera. Please verify the URL and ensure the camera is accessible."
+#     #         )
+#
+#     #     db_camera = Camera(
+#     #         name=camera.name,
+#     #         camera_type=camera.camera_type,
+#     #         url=camera.url,
+#     #         is_active=True,
+#     #         created_at=datetime.utcnow()
+#     #     )
+#     #     db.add(db_camera)
+#     #     db.commit()
+#     #     db.refresh(db_camera)
+#
+#     #     # Initialize camera with optimal settings
+#     #     config = CameraConfig(resolution=(1920, 1080), fps=30, buffer_size=5, warmup_frames=30)
+#     #     init_success = camera_manager.add_camera(db_camera.id, camera.url, config)
+#
+#     #     if not init_success:
+#     #         db.delete(db_camera)
+#     #         db.commit()
+#     #         raise HTTPException(status_code=500, detail="Camera connection succeeded but initialization failed")
+#
+#     #     logger.info(f"Camera '{camera.name}' (ID: {db_camera.id}) added successfully")
+#     #     return db_camera
+#
+#     # except HTTPException:
+#     #     raise
+#     # except Exception as e:
+#     #     logger.error(f"Camera creation error: {e}", exc_info=True)
+#     #     db.rollback()
+#     #     raise HTTPException(status_code=500, detail=str(e))
+#     raise HTTPException(status_code=501, detail="Camera management disabled")
+#
+#
+# @app.get("/api/cameras", response_model=List[CameraResponse])
+# async def list_cameras(db: Session = Depends(get_db)):
+#     """List all cameras"""
+#     # try:
+#     #     return db.query(Camera).all()
+#     # except Exception as e:
+#     #     logger.error(f"Camera list error: {e}")
+#     #     raise HTTPException(status_code=500, detail=str(e))
+#     return []
+#
+#
+# @app.get("/api/cameras/{camera_id}/metrics")
+# async def get_camera_metrics(camera_id: int):
+#     """Get performance metrics for a camera"""
+#     # try:
+#     #     metrics = camera_manager.get_camera_metrics(camera_id)
+#     #     if metrics is None:
+#     #         raise HTTPException(status_code=404, detail="Camera not found or not initialized")
+#     #     return metrics
+#     # except HTTPException:
+#     #     raise
+#     # except Exception as e:
+#     #     logger.error(f"Camera metrics error: {e}")
+#     #     raise HTTPException(status_code=500, detail=str(e))
+#     return {}
+#
+#
+# @app.get("/api/cameras/metrics/all")
+# async def get_all_camera_metrics():
+#     """Get metrics for all cameras"""
+#     # try:
+#     #     return camera_manager.get_all_metrics()
+#     # except Exception as e:
+#     #     logger.error(f"All camera metrics error: {e}")
+#     #     raise HTTPException(status_code=500, detail=str(e))
+#     return {}
+#
+#
+# @app.put("/api/cameras/{camera_id}", response_model=CameraResponse)
+# async def update_camera(camera_id: int, camera_update: CameraUpdate, db: Session = Depends(get_db)):
+#     """Update camera settings"""
+#     # try:
+#     #     camera = db.query(Camera).filter(Camera.id == camera_id).first()
+#     #     if not camera:
+#     #         raise HTTPException(status_code=404, detail="Camera not found")
+#
+#     #     if camera_update.name:
+#     #         camera.name = camera_update.name
+#     #     if camera_update.url:
+#     #         if not camera_manager.test_camera(camera_update.url):
+#     #             raise HTTPException(status_code=400, detail="New camera URL is not accessible")
+#     #         camera.url = camera_update.url
+#     #         config = CameraConfig(resolution=(1920, 1080), fps=30)
+#     #         camera_manager.add_camera(camera_id, camera_update.url, config)
+#     #     if camera_update.is_active is not None:
+#     #         camera.is_active = camera_update.is_active
+#     #         if not camera_update.is_active:
+#     #             camera_manager.remove_camera(camera_id)
+#
+#     #     db.commit()
+#     #     db.refresh(camera)
+#
+#     #     logger.info(f"Camera {camera_id} updated")
+#     #     return camera
+#
+#     # except HTTPException:
+#     #     raise
+#     # except Exception as e:
+#     #     logger.error(f"Camera update error: {e}", exc_info=True)
+#     #     db.rollback()
+#     #     raise HTTPException(status_code=500, detail=str(e))
+#     raise HTTPException(status_code=501, detail="update camera disabled")
+#
+#
+# @app.delete("/api/cameras/{camera_id}")
+# async def delete_camera(camera_id: int, db: Session = Depends(get_db)):
+#     """Delete camera"""
+#     # try:
+#     #     camera = db.query(Camera).filter(Camera.id == camera_id).first()
+#     #     if not camera:
+#     #         raise HTTPException(status_code=404, detail="Camera not found")
+#
+#     #     camera_manager.remove_camera(camera_id)
+#     #     db.delete(camera)
+#     #     db.commit()
+#
+#     #     logger.info(f"Camera {camera_id} deleted")
+#     #     return {"message": "Camera deleted successfully"}
+#     # except HTTPException:
+#     #     raise
+#     # except Exception as e:
+#     #     logger.error(f"Camera deletion error: {e}")
+#     #     db.rollback()
+#     #     raise HTTPException(status_code=500, detail=str(e))
+#     raise HTTPException(status_code=501, detail="delete camera disabled")
+#
+#
+# @app.post("/api/cameras/test")
+# async def test_camera_connection(url: str):
+#     """Test camera connection"""
+#     # try:
+#     #     success = camera_manager.test_camera(url)
+#     #     return {
+#     #         "success": success,
+#     #         "message": "Camera connection successful" if success else "Failed to connect to camera"
+#     #     }
+#     # except Exception as e:
+#     #     logger.error(f"Camera test error: {e}")
+#     #     return {"success": False, "error": str(e)}
+#     return {"success": False, "error": "Camera testing disabled"}
 
 
 # ==================== EXPORT ====================
