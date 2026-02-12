@@ -612,7 +612,13 @@ async def video_feed(camera_id: int = 0):
 
     return StreamingResponse(
         generate(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Accel-Buffering": "no"
+        }
     )
 
 

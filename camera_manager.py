@@ -506,8 +506,12 @@ class CameraManager:
     def get_frame(self, camera_id: int) -> Optional[bytes]:
         """Get a frame encoded as JPEG bytes for streaming"""
         with self.lock:
-            # Cloud simulator
+            # Cloud simulator auto-init
             if self._is_cloud_environment:
+                if camera_id not in self.cameras:
+                    self.cameras[camera_id] = "SIMULATOR"
+                    logger.info(f"Auto-initialized SIMULATOR for camera {camera_id}")
+                
                 result = self._generate_simulator_frame(camera_id)
                 if result:
                     frame, _ = result
@@ -516,7 +520,7 @@ class CameraManager:
                     return buffer.tobytes()
                 return None
 
-            # Real camera
+            # Real camera auto-discovery
             if camera_id not in self.cameras:
                 if camera_id == 0:
                     self.add_camera(0, "0")
