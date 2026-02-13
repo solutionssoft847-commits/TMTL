@@ -103,7 +103,7 @@ class HuggingFaceClient:
         logger.warning(f"Delete template '{name}' - endpoint not implemented on HF Space")
         return True
 
-    async def detect_part(self, image: Image.Image, threshold: float = 0.92) -> Dict[str, Any]:
+    async def detect_part(self, image: Image.Image, threshold: float = 0.65) -> Dict[str, Any]:
         """Run detection on an image using the HF Space model"""
         if not self.client:
             return {

@@ -396,7 +396,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 <button onclick="removeTemplateFile(${idx})">&times;</button>
             </div>
         `).join('');
-        saveTemplateBtn.classList.toggle('hidden', selectedTemplateFiles.length < 3);
+        saveTemplateBtn.classList.toggle('hidden', selectedTemplateFiles.length < 1);
     }
 
     window.removeTemplateFile = function (idx) {

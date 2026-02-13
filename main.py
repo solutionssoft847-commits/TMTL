@@ -107,26 +107,26 @@ class ImageProcessor:
         return result
 
     @staticmethod
-    def validate_image_quality(img: Image.Image, min_resolution: tuple = (640, 480)) -> tuple:
-        """Validate image meets quality standards"""
+    def validate_image_quality(img: Image.Image, min_resolution: tuple = (320, 240)) -> tuple:
+        """Validate image meets quality standards - Relaxed constraints"""
         width, height = img.size
 
         if width < min_resolution[0] or height < min_resolution[1]:
             return False, f"Image resolution too low: {width}x{height} (minimum: {min_resolution[0]}x{min_resolution[1]})"
 
         aspect_ratio = width / height
-        if aspect_ratio < 0.5 or aspect_ratio > 2.0:
+        if aspect_ratio < 0.2 or aspect_ratio > 5.0:  # Relaxed aspect ratio
             return False, f"Unusual aspect ratio: {aspect_ratio:.2f}"
 
         img_array = np.array(img)
         brightness = np.mean(img_array)
-        if brightness < 30:
+        if brightness < 15:  # Relaxed: was 30
             return False, "Image too dark"
-        if brightness > 225:
+        if brightness > 245:  # Relaxed: was 225
             return False, "Image too bright"
 
         contrast = np.std(img_array)
-        if contrast < 20:
+        if contrast < 5:  # Relaxed: was 20
             return False, "Image has insufficient contrast"
 
         return True, "OK"
@@ -335,8 +335,8 @@ async def create_template(
 ):
     """Upload template images with quality validation"""
     try:
-        if len(files) < 3 or len(files) > 10:
-            raise HTTPException(status_code=400, detail="Please upload between 3 and 10 template images")
+        if len(files) < 1 or len(files) > 10:
+            raise HTTPException(status_code=400, detail="Please upload between 1 and 10 template images")
 
         template_images = []
         quality_issues = []
@@ -353,7 +353,7 @@ async def create_template(
             img_processed = image_processor.prepare_for_detection(img)
             template_images.append(img_processed)
 
-        if len(template_images) < 3:
+        if len(template_images) < 2:
             raise HTTPException(
                 status_code=400,
                 detail=f"Not enough valid images. Issues: {'; '.join(quality_issues)}"
