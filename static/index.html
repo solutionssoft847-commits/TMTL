@@ -121,7 +121,7 @@
                             <button class="tech-tab active" data-tab="webcam-main">
                                 <i class="fa-solid fa-video"></i> LIVE CAMERA
                             </button>
-                            <button class="tech-tab" data-tab="upload-main">
+                            <button class="tech-tab active" data-tab="upload-main">
                                 <i class="fa-solid fa-upload"></i> UPLOAD IMAGE
                             </button>
                         </div>
@@ -166,7 +166,16 @@
                                 <div class="scan-line"></div>
                             </div>
 
-                            <!-- Action Bar Removed: Only monitoring in Live Camera -->
+                            <!-- Action Bar -->
+                            <div class="action-bar-3d">
+                                <button class="btn-3d-primary" id="btn-start-inspection" onclick="captureAndScan()">
+                                    <div class="btn-content">
+                                        <i class="fa-solid fa-bolt"></i>
+                                        <span>CAPTURE & ANALYZE</span>
+                                    </div>
+                                    <div class="btn-shine"></div>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- UPLOAD SCAN TAB -->
@@ -182,7 +191,11 @@
                                     <input type="file" id="main-file-upload" accept="image/*" hidden>
                                 </div>
                             </div>
-                            <!-- Action Bar Removed: Auto-upload on file select -->
+                            <div class="action-bar" style="justify-content: center; margin-top: 12px;">
+                                <button class="btn-tech-primary" style="width: 300px;" id="main-upload-btn" disabled>
+                                    <i class="fa-solid fa-magnifying-glass-chart"></i> ANALYZE IMAGE
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Scan Result -->
