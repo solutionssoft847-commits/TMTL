@@ -206,15 +206,25 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Schema migration error: {e}")
 
-    # Initialize cameras from database - REMOVED in favor of auto-detection
-    # limit check to first 5 indices to save startup time
+    # Initialize cameras from auto-detection
     available_cams = camera_manager.get_available_cameras()
     logger.info(f"Startup: Auto-detected cameras at indices {available_cams}")
 
+    # Proactive HuggingFace Warm-up
+    def warmup_hf():
+        try:
+            logger.info("Startup: Prompting HuggingFace client warm-up...")
+            _ = hf_client.client
+        except Exception as e:
+            logger.warning(f"HF Warm-up failed: {e}")
+
+    # Run warm-up in a separate thread to not block main startup
+    import threading
+    threading.Thread(target=warmup_hf, daemon=True).start()
+
     # Start background tasks
     asyncio.create_task(periodic_cleanup())
-    # asyncio.create_task(periodic_camera_health_check())
-
+    
     logger.info("System initialization complete")
 
 
