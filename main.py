@@ -74,8 +74,8 @@ class ImageProcessor:
         if auto_adjust:
             img_array = ImageProcessor._auto_color_correction(img_array)
 
-        # Denoise
-        img_array = cv2.fastNlMeansDenoisingColored(img_array, None, 10, 10, 7, 21)
+        # Denoise (Faster alternative to prevent timeouts)
+        img_array = cv2.GaussianBlur(img_array, (3, 3), 0)
 
         # Sharpen
         kernel = np.array([[-1, -1, -1],

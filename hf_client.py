@@ -103,7 +103,7 @@ class HuggingFaceClient:
         logger.warning(f"Delete template '{name}' - endpoint not implemented on HF Space")
         return True
 
-    async def detect_part(self, image: Image.Image, threshold: float = 0.65) -> Dict[str, Any]:
+    async def detect_part(self, image: Image.Image, threshold: float = 0.92) -> Dict[str, Any]:
         """Run detection on an image using the HF Space model"""
         if not self.client:
             return {
@@ -145,27 +145,41 @@ class HuggingFaceClient:
             if status_text:
                 lines = status_text.split('\n')
                 for line in lines:
-                    if 'Confidence:' in line or 'confidence:' in line:
+                    # Handle "Confidence: 95.00%" or "**Confidence**: 95.00%"
+                    if 'confidence' in line.lower():
                         try:
-                            # Extract percentage value
-                            conf_str = line.split(':')[1].strip().replace('%', '').replace('*', '')
-                            confidence = float(conf_str) / 100.0
+                            # Use everything after the last colon
+                            val = line.rsplit(':', 1)[-1].strip()
+                            # Remove markdown and percent sign
+                            val = val.replace('%', '').replace('*', '').replace('`', '').strip()
+                            confidence = float(val) / 100.0
+                        except Exception as e:
+                            logger.debug(f"Failed to parse confidence from line '{line}': {e}")
+                            
+                    # Handle "Best Match: block" or "**Best Match**: `block`"
+                    if 'match' in line.lower() and 'best' in line.lower():
+                        try:
+                            val = line.rsplit(':', 1)[-1].strip()
+                            best_match = val.replace('*', '').replace('`', '').strip()
                         except Exception:
                             pass
-                    if 'Best Match:' in line:
-                        try:
-                            best_match = line.split(':')[1].strip().replace('*', '')
-                        except Exception:
-                            pass
+                            
                     if 'MATCHED' in line or '✅' in line:
                         matched = True
             
-            # Handle label data if it's a dict
+            # Handle label data if it's a dict (Gradio Label object)
             if isinstance(label_data, dict):
                 best_match = label_data.get('label', best_match)
                 if 'confidences' in label_data and label_data['confidences']:
                     # Get the highest confidence
-                    confidence = max([c.get('confidence', 0) for c in label_data['confidences']])
+                    max_conf = 0.0
+                    for c in label_data['confidences']:
+                        conf_val = c.get('confidence', 0.0)
+                        if conf_val > max_conf:
+                            max_conf = conf_val
+                            if not best_match or c.get('label') == best_match:
+                                max_conf = conf_val
+                    confidence = max(confidence, max_conf)
             
             logger.info(f"Detection result - Matched: {matched}, Confidence: {confidence:.2%}, Part: {best_match}")
             
