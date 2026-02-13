@@ -15,13 +15,9 @@ class CameraManager:
         self.active_camera_id: Optional[int] = None
     
     def get_available_cameras(self, max_check: int = 5) -> List[int]:
-        """
-        Scans for available cameras by attempting to open indices 0 to max_check.
-        Returns a list of available camera indices.
-        """
         available_cameras = []
         for i in range(max_check):
-            cap = cv2.VideoCapture(i, cv2.CAP_DSHOW) # CAP_DSHOW for faster checking on Windows
+            cap = cv2.VideoCapture(i) 
             if cap.isOpened():
                 ret, _ = cap.read()
                 if ret:
@@ -35,10 +31,6 @@ class CameraManager:
         return available_cameras
     
     def start_camera(self, camera_id: int) -> bool:
-        """
-        Initializes a camera if not already active.
-        Closes other cameras to save resources (single active camera policy).
-        """
         with self.lock:
             # If requesting the already active camera, just return True
             if self.active_camera_id == camera_id and camera_id in self.cameras:
@@ -50,7 +42,7 @@ class CameraManager:
                 self.release_camera(self.active_camera_id)
             
             # Start new camera
-            cap = cv2.VideoCapture(camera_id, cv2.CAP_DSHOW)
+            cap = cv2.VideoCapture(camera_id)
             if cap.isOpened():
                 # Set common resolution (can be made configurable)
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
@@ -65,10 +57,6 @@ class CameraManager:
                 return False
     
     def get_frame(self, camera_id: int) -> Optional[bytes]:
-        """
-        Captures a frame from the specified camera and returns it as JPEG bytes.
-        Ideal for video streaming.
-        """
         # Ensure camera is started
         if self.active_camera_id != camera_id or camera_id not in self.cameras:
             if not self.start_camera(camera_id):
@@ -90,10 +78,6 @@ class CameraManager:
         return None
 
     def capture_frame(self, camera_id: int) -> Optional[object]:
-        """
-        Captures a frame and returns it as a PIL Image.
-        Ideal for processing/inference.
-        """
         from PIL import Image
         
         # Ensure camera is started
@@ -111,7 +95,6 @@ class CameraManager:
         return None
 
     def release_camera(self, camera_id: int):
-        """Releases a specific camera resource."""
         with self.lock:
             if camera_id in self.cameras:
                 self.cameras[camera_id].release()
@@ -121,7 +104,6 @@ class CameraManager:
                 logger.info(f"Released camera {camera_id}")
 
     def release_all(self):
-        """Releases all camera resources."""
         with self.lock:
             for cam_id, cap in self.cameras.items():
                 cap.release()
