@@ -41,124 +41,28 @@ document.addEventListener('DOMContentLoaded', function () {
             // Section-specific data loading
             if (sectionId === 'overview') updateStats();
             if (sectionId === 'templates') loadTemplates();
-            if (sectionId === 'camera') {
-                // loadCameras(); // Disabled
-            }
+            if (sectionId === 'camera') loadCameras();
             if (sectionId === 'history') loadHistory();
 
             // Camera feed management
+            /*
             if (sectionId === 'inspection') {
                 await populateCameraSelector();
                 startFeed(activeCameraId);
             } else {
                 stopFeed();
             }
+            */
         }
     }
 
-    // ================= CAMERA FEED (WebRTC) =================
-    let currentStream = null;
-
-    async function startFeed(deviceId) {
-        const videoEl = document.getElementById('main-inspection-feed');
-        if (!videoEl) return;
-
-        stopFeed(); // Stop previous stream if any
-
-        try {
-            if (cameraStatusIndicator) {
-                cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> INITIALIZING...';
-                cameraStatusIndicator.style.color = '#868e96';
-            }
-
-            const constraints = {
-                video: {
-                    deviceId: deviceId ? { exact: deviceId } : undefined,
-                    width: { ideal: 1920 },
-                    height: { ideal: 1080 }
-                }
-            };
-
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            currentStream = stream;
-            videoEl.srcObject = stream;
-
-            // Wait for video to be ready
-            videoEl.onloadedmetadata = () => {
-                videoEl.play();
-                if (cameraStatusIndicator) {
-                    cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-circle"></i> LIVE :: WEB CAM';
-                    cameraStatusIndicator.style.color = '#0ca678';
-                }
-            };
-
-        } catch (err) {
-            console.error("Error accessing camera:", err);
-            if (cameraStatusIndicator) {
-                cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ACCESS DENIED';
-                cameraStatusIndicator.style.color = '#fa5252';
-            }
-            alert("Could not access camera. Please ensure permissions are granted.");
-        }
-    }
-
-    function stopFeed() {
-        const videoEl = document.getElementById('main-inspection-feed');
-        if (videoEl) {
-            videoEl.srcObject = null;
-        }
-        if (currentStream) {
-            currentStream.getTracks().forEach(track => track.stop());
-            currentStream = null;
-        }
-    }
-
-    async function populateCameraSelector() {
-        if (!cameraSelect) return;
-
-        try {
-            // Check permission first
-            await navigator.mediaDevices.getUserMedia({ video: true });
-
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            const videoDevices = devices.filter(device => device.kind === 'videoinput');
-
-            if (videoDevices.length === 0) {
-                cameraSelect.innerHTML = '<option value="">No cameras found</option>';
-                return;
-            }
-
-            let options = '';
-            videoDevices.forEach((device, index) => {
-                const label = device.label || `Camera ${index + 1}`;
-                const value = device.deviceId;
-                // Select the first one by default if activeCameraId is 0 or matches
-                const selected = (index === 0) ? 'selected' : '';
-                options += `<option value="${value}" ${selected}>${label}</option>`;
-            });
-
-            cameraSelect.innerHTML = options;
-
-            // Start the first camera automatically
-            if (videoDevices.length > 0) {
-                startFeed(videoDevices[0].deviceId);
-            }
-
-        } catch (e) {
-            console.error('Error listing cameras:', e);
-            cameraSelect.innerHTML = '<option value="">Camera access required</option>';
-        }
-    }
-
-    // Camera selector change handler
-    if (cameraSelect) {
-        if (cameraSelect) {
-            cameraSelect.addEventListener('change', (e) => {
-                const newDeviceId = e.target.value;
-                startFeed(newDeviceId);
-            });
-        }
-    }
+    // Camera Feed and Selector Logic Disabled
+    /*
+    function startFeed(cameraId) { ... }
+    function stopFeed() { ... }
+    async function populateCameraSelector() { ... }
+    if (cameraSelect) { ... }
+    */
 
     // ================= STATS & OVERVIEW =================
     async function updateStats() {
@@ -216,67 +120,10 @@ document.addEventListener('DOMContentLoaded', function () {
         switchSection('inspection');
     }
 
-    // ================= INSPECTION: CAPTURE & SCAN =================
-    // ================= INSPECTION: CAPTURE & SCAN (Frontend) =================
-    window.captureAndScan = async function () {
-        const videoEl = document.getElementById('main-inspection-feed');
-        const canvas = document.getElementById('inspection-capture-canvas');
-        const btn = document.getElementById('btn-start-inspection');
-
-        if (!videoEl || !canvas) return;
-
-        // Show loading
-        mainScanResultBox.classList.remove('hidden');
-        mainScanResultBox.innerHTML = '<div class="loading-spinner-tech"><i class="fa-solid fa-circle-notch fa-spin"></i> Capturing & Analyzing...</div>';
-
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Scanning...';
-        }
-
-        try {
-            // Capture frame from video to canvas
-            canvas.width = videoEl.videoWidth;
-            canvas.height = videoEl.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-
-            // Convert canvas to blob
-            canvas.toBlob(async (blob) => {
-                if (!blob) {
-                    mainScanResultBox.innerHTML = '<div class="error-msg">Failed to capture frame.</div>';
-                    btn.disabled = false;
-                    return;
-                }
-
-                const formData = new FormData();
-                formData.append('file', blob, 'capture.jpg');
-                formData.append('enhance', 'true'); // Optional: ask backend to enhance
-
-                try {
-                    // Use the existing file upload endpoint
-                    const response = await fetch('/api/scan', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    const result = await response.json();
-                    showScanResult(result);
-                } catch (error) {
-                    mainScanResultBox.innerHTML = '<div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> Analysis failed.</div>';
-                } finally {
-                    if (btn) {
-                        btn.disabled = false;
-                        btn.innerHTML = '<i class="fa-solid fa-bolt"></i> Start Inspection';
-                    }
-                }
-            }, 'image/jpeg', 0.95);
-
-        } catch (error) {
-            console.error(error);
-            mainScanResultBox.innerHTML = '<div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> Capture failed.</div>';
-            if (btn) btn.disabled = false;
-        }
-    };
+    // Capture and Scan Logic Disabled
+    /*
+    window.captureAndScan = async function () { ... };
+    */
 
     // ================= INSPECTION: UPLOAD & SCAN =================
     if (mainFileInput) {
@@ -476,159 +323,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 
-    // ================= CAMERA MANAGEMENT =================
-    window.openAddCameraModal = function () {
-        document.getElementById('add-camera-modal').style.display = 'block';
-        // Reset form
-        document.getElementById('new-camera-name').value = '';
-        document.getElementById('new-camera-url').value = '';
-        const testResult = document.getElementById('camera-test-result');
-        if (testResult) testResult.innerHTML = '';
-    };
-
-    window.closeAddCameraModal = function () {
-        document.getElementById('add-camera-modal').style.display = 'none';
-    };
-
-    window.testNewCameraConnection = async function () {
-        const url = document.getElementById('new-camera-url').value;
-        const testResult = document.getElementById('camera-test-result');
-        if (!url) {
-            if (testResult) testResult.innerHTML = '<span style="color: #fa5252; font-size: 0.85rem;">Please enter a URL first</span>';
-            return;
-        }
-
-        if (testResult) testResult.innerHTML = '<span style="color: #868e96; font-size: 0.85rem;"><i class="fa-solid fa-spinner fa-spin"></i> Testing...</span>';
-
-        try {
-            const response = await fetch(`/api/cameras/test?url=${encodeURIComponent(url)}`, { method: 'POST' });
-            const result = await response.json();
-            if (testResult) {
-                testResult.innerHTML = result.success
-                    ? '<span style="color: #0ca678; font-size: 0.85rem;"><i class="fa-solid fa-check-circle"></i> Connection successful!</span>'
-                    : `<span style="color: #fa5252; font-size: 0.85rem;"><i class="fa-solid fa-times-circle"></i> ${result.message || 'Connection failed'}</span>`;
-            }
-        } catch (error) {
-            if (testResult) testResult.innerHTML = '<span style="color: #fa5252; font-size: 0.85rem;">Test request failed</span>';
-        }
-    };
-
-    window.saveNewCamera = async function () {
-        const name = document.getElementById('new-camera-name').value;
-        const type = document.getElementById('new-camera-type').value;
-        const url = document.getElementById('new-camera-url').value;
-        const saveBtn = document.getElementById('btn-save-camera');
-
-        if (!name || !url) {
-            alert('Please fill in camera name and URL');
-            return;
-        }
-
-        if (saveBtn) {
-            saveBtn.disabled = true;
-            saveBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
-        }
-
-        try {
-            const response = await fetch('/api/cameras', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, camera_type: type, url })
-            });
-            const data = await response.json();
-
-            if (data.id) {
-                closeAddCameraModal();
-                loadCameras();
-                // Also refresh inspection camera selector
-                populateCameraSelector();
-            } else {
-                alert('Error: ' + (data.detail || 'Failed to add camera'));
-            }
-        } catch (error) {
-            console.error(error);
-            alert('Failed to save camera');
-        } finally {
-            if (saveBtn) {
-                saveBtn.disabled = false;
-                saveBtn.innerHTML = '<i class="fa-solid fa-save"></i> Save Camera';
-            }
-        }
-    };
-
-    async function loadCameras() {
-        try {
-            const container = document.getElementById('camera-list-container');
-            const response = await fetch('/api/cameras');
-            const data = await response.json();
-
-            if (data.length === 0) {
-                container.innerHTML = `
-                    <div class="empty-state" style="grid-column: 1 / -1;">
-                        <i class="fa-solid fa-video-slash"></i>
-                        <h4>No cameras configured</h4>
-                        <p>Click "Add Camera" to connect a video source</p>
-                    </div>`;
-                return;
-            }
-
-            container.innerHTML = data.map(c => `
-                <div class="camera-card ${c.is_active ? 'active' : 'inactive'}">
-                    <div class="camera-header-3d">
-                        <span class="camera-id-3d">CAM-${c.id.toString().padStart(2, '0')}</span>
-                        <span class="camera-status-3d ${c.is_active ? 'on' : 'off'}">
-                             <i class="fa-solid fa-circle"></i> ${c.is_active ? 'ONLINE' : 'OFFLINE'}
-                        </span>
-                    </div>
-                    <div class="camera-preview-3d">
-                        <div class="scan-overlay"></div>
-                        <img src="/api/video_feed?camera_id=${c.id}" alt="Preview" onerror="this.style.display='none'">
-                        <div class="no-signal">NO SIGNAL</div>
-                    </div>
-                    <div class="camera-info-3d">
-                        <h4>${c.name}</h4>
-                        <p>${c.camera_type.toUpperCase()} :: ${c.url}</p>
-                    </div>
-                    <div class="camera-actions-3d">
-                        <button class="btn-tech-sm" onclick="toggleCamera(${c.id}, ${!c.is_active})">
-                           ${c.is_active ? '<i class="fa-solid fa-power-off"></i> Deactivate' : '<i class="fa-solid fa-power-off"></i> Activate'}
-                        </button>
-                        <button class="btn-tech-sm danger" onclick="deleteCamera(${c.id})">
-                             <i class="fa-solid fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-            `).join('');
-        } catch (error) {
-            console.error('Error loading cameras:', error);
-            document.getElementById('camera-list-container').innerHTML =
-                '<div class="error-msg">Failed to load cameras</div>';
-        }
-    }
-
-    window.toggleCamera = async function (id, activate) {
-        try {
-            await fetch(`/api/cameras/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ is_active: activate })
-            });
-            loadCameras();
-        } catch (error) {
-            console.error(error);
-        }
-    };
-
-    window.deleteCamera = async function (id) {
-        if (!confirm('Remove this camera?')) return;
-        try {
-            await fetch(`/api/cameras/${id}`, { method: 'DELETE' });
-            loadCameras();
-            populateCameraSelector();
-        } catch (error) {
-            console.error(error);
-        }
-    };
+    // Camera Management Logic Disabled
+    /*
+    window.openAddCameraModal = function () { ... }
+    window.closeAddCameraModal = function () { ... }
+    window.testNewCameraConnection = async function () { ... }
+    window.saveNewCamera = async function () { ... }
+    async function loadCameras() { ... }
+    window.toggleCamera = async function (id, activate) { ... }
+    window.deleteCamera = async function (id) { ... }
+    */
 
     // ================= HISTORY =================
     async function loadHistory() {

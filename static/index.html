@@ -34,15 +34,15 @@
                 <a href="#" class="nav-item active" data-target="overview">
                     <i class="fa-solid fa-chart-pie"></i> Overview
                 </a>
-                <a href="#" class="nav-item" data-target="inspection">
+                <!-- <a href="#" class="nav-item" data-target="inspection">
                     <i class="fa-solid fa-camera"></i> Inspection
-                </a>
+                </a> -->
                 <a href="#" class="nav-item" data-target="templates">
                     <i class="fa-solid fa-layer-group"></i> Templates
                 </a>
-                <a href="#" class="nav-item" data-target="camera">
+                <!-- <a href="#" class="nav-item" data-target="camera">
                     <i class="fa-solid fa-video"></i> Camera Management
-                </a>
+                </a> -->
                 <a href="#" class="nav-item" data-target="history">
                     <i class="fa-solid fa-clock-rotate-left"></i> History
                 </a>
@@ -118,49 +118,24 @@
                 <div class="cv-panel">
                     <div class="panel-header">
                         <div class="tech-tabs" style="margin-bottom: 0; border-bottom: none;">
-                            <button class="tech-tab active" data-tab="webcam-main">
+                            <!-- <button class="tech-tab active" data-tab="webcam-main">
                                 <i class="fa-solid fa-video"></i> LIVE FEED
-                            </button>
-                            <button class="tech-tab" data-tab="upload-main">
+                            </button> -->
+                            <button class="tech-tab active" data-tab="upload-main">
                                 <i class="fa-solid fa-upload"></i> UPLOAD SCAN
                             </button>
                         </div>
                     </div>
 
                     <div class="panel-body">
-                        <!-- LIVE FEED TAB -->
+                        <!-- LIVE FEED TAB (Disabled)
                         <div id="tab-webcam-main" class="tab-content active">
-                            <!-- Camera selector -->
-                            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                                <label style="font-weight: 600; font-size: 0.85rem; color: #6c757d;">SOURCE:</label>
-                                <select id="inspection-camera-select"
-                                    style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.85rem; min-width: 200px;">
-                                    <option value="0">Default Camera (0)</option>
-                                </select>
-                                <span id="camera-status-indicator" style="font-size: 0.75rem; color: #868e96;"><i
-                                        class="fa-solid fa-circle-notch fa-spin"></i> INITIALIZING...</span>
-                            </div>
-
-                            <!-- Video feed -->
-                            <div class="modal-live-view-tech" style="height: 450px;">
-                                <div class="hud-corners"></div>
-                                <video id="main-inspection-feed" autoplay playsinline
-                                    style="width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1);"></video>
-                                <canvas id="inspection-capture-canvas" style="display:none;"></canvas>
-                                <div class="reticle"></div>
-                            </div>
-
-                            <!-- Actions -->
-                            <div class="action-bar" style="justify-content: center; gap: 12px; margin-top: 12px;">
-                                <button class="btn-tech-primary" style="width: 300px;" id="btn-start-inspection"
-                                    onclick="captureAndScan()">
-                                    <i class="fa-solid fa-bolt"></i> Start Inspection
-                                </button>
-                            </div>
+                            ...
                         </div>
+                        -->
 
                         <!-- UPLOAD SCAN TAB -->
-                        <div id="tab-upload-main" class="tab-content">
+                        <div id="tab-upload-main" class="tab-content active">
                             <div class="upload-zone tech-border" id="main-upload-zone-wrapper">
                                 <div class="scanner-line"></div>
                                 <i class="fa-solid fa-file-import fa-3x"></i>
@@ -240,63 +215,13 @@
                 </div>
             </div>
 
-            <!-- Camera Management Section Hidden -->
-            <div id="camera-section" class="content-section" style="display:none !important;">
-                <div class="dashboard-header-tech">
-                    <div>
-                        <h2><i class="fa-solid fa-video"></i> Video Sources</h2>
-                        <p style="color: #6c757d; font-size: 0.85rem; margin: 4px 0 0;">Manage camera connections for
-                            live inspection</p>
-                    </div>
-                    <button class="btn-tech-primary" onclick="openAddCameraModal()">
-                        <i class="fa-solid fa-plus"></i> <span style="margin-left:5px">ADD CAMERA</span>
-                    </button>
-                </div>
+            <!-- <div id="camera-section" class="content-section">
+                ... 
+            </div> -->
 
-                <div id="camera-list-container" class="camera-grid-tech">
-                    <div class="loading-tech">
-                        <i class="fa-solid fa-circle-notch fa-spin"></i> Loading cameras...
-                    </div>
-                </div>
-            </div>
-
-            <!-- Add Camera Modal -->
-            <div id="add-camera-modal" class="modal">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h3><i class="fa-solid fa-video"></i> Add Camera</h3>
-                        <span class="close-modal" onclick="closeAddCameraModal()">&times;</span>
-                    </div>
-                    <div class="modal-body">
-                        <div class="form-group">
-                            <label>Camera Name</label>
-                            <input type="text" id="new-camera-name" placeholder="e.g. Production Line 1">
-                        </div>
-                        <div class="form-group">
-                            <label>Camera Type</label>
-                            <select id="new-camera-type">
-                                <option value="ip">IP Camera (RTSP/HTTP)</option>
-                                <option value="usb">USB Camera</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Stream URL / Device Index</label>
-                            <input type="text" id="new-camera-url" placeholder="rtsp://... or 0 for USB">
-                            <small style="color: #868e96; font-size: 0.75rem;">Use 0, 1, 2... for USB cameras or
-                                RTSP/HTTP URL for IP cameras</small>
-                        </div>
-                        <div id="camera-test-result" style="margin-bottom: 12px;"></div>
-                        <div style="display: flex; gap: 10px;">
-                            <button class="btn-secondary" onclick="testNewCameraConnection()" style="flex: 1;">
-                                <i class="fa-solid fa-flask"></i> Test
-                            </button>
-                            <button class="btn-primary" id="btn-save-camera" onclick="saveNewCamera()" style="flex: 2;">
-                                <i class="fa-solid fa-save"></i> Save Camera
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <!-- <div id="add-camera-modal" class="modal">
+                ...
+            </div> -->
 
             <div id="history-section" class="content-section">
                 <div class="cv-panel full-height">
