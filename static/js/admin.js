@@ -1,7 +1,8 @@
 document.addEventListener('DOMContentLoaded', function () {
     // ================= STATE =================
     let activeSection = 'overview';
-    let activeCameraId = 0;
+    let activeCameraId = null;
+    let currentStream = null;
 
     // ================= ELEMENTS =================
     const totalScansEl = document.getElementById('total-scans');
@@ -65,26 +66,35 @@ document.addEventListener('DOMContentLoaded', function () {
 
         try {
             cameraSelect.innerHTML = '<option value="">Searching...</option>';
-            const response = await fetch('/api/cameras');
-            const cameras = await response.json();
+
+            // Explicitly request permissions first to get device labels
+            try {
+                const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                tempStream.getTracks().forEach(track => track.stop());
+            } catch (e) {
+                console.warn("Permission denied or no camera found:", e);
+            }
+
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoDevices = devices.filter(device => device.kind === 'videoinput');
 
             cameraSelect.innerHTML = '';
 
-            if (cameras.length === 0) {
+            if (videoDevices.length === 0) {
                 cameraSelect.innerHTML = '<option value="">No cameras found</option>';
                 return;
             }
 
-            cameras.forEach(cam => {
+            videoDevices.forEach((device, index) => {
                 const option = document.createElement('option');
-                option.value = cam.id;
-                option.textContent = cam.name || `Camera ${cam.id}`;
+                option.value = device.deviceId;
+                option.textContent = device.label || `Camera ${index + 1}`;
                 cameraSelect.appendChild(option);
             });
 
             // Set active camera or default to first
-            if (activeCameraId === null && cameras.length > 0) {
-                activeCameraId = cameras[0].id;
+            if (activeCameraId === null && videoDevices.length > 0) {
+                activeCameraId = videoDevices[0].deviceId;
             }
 
             cameraSelect.value = activeCameraId;
@@ -92,27 +102,50 @@ document.addEventListener('DOMContentLoaded', function () {
 
         } catch (error) {
             console.error('Error loading cameras:', error);
-            cameraSelect.innerHTML = '<option value="">Error loading cameras</option>';
+            cameraSelect.innerHTML = '<option value="">Error accessing camera</option>';
         }
     }
 
-    function startFeed(cameraId) {
+    async function startFeed(deviceId) {
         if (!feedImg) return;
-        activeCameraId = cameraId;
-        // Add timestamp to prevent caching
-        feedImg.src = `/api/video_feed?camera_id=${cameraId}&t=${new Date().getTime()}`;
 
-        if (cameraStatusIndicator) {
-            cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-circle fa-beat" style="color: var(--success-color);"></i> LIVE';
-            cameraStatusIndicator.style.borderColor = 'var(--success-color)';
-            cameraStatusIndicator.style.color = 'var(--success-color)';
+        stopFeed(); // Clean up existing stream
+
+        activeCameraId = deviceId;
+        const constraints = {
+            video: {
+                deviceId: deviceId ? { exact: deviceId } : undefined,
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        };
+
+        try {
+            currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+            feedImg.srcObject = currentStream;
+
+            if (cameraStatusIndicator) {
+                cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-circle fa-beat" style="color: var(--success-color);"></i> LIVE';
+                cameraStatusIndicator.style.borderColor = 'var(--success-color)';
+                cameraStatusIndicator.style.color = 'var(--success-color)';
+            }
+        } catch (error) {
+            console.error('Error starting video stream:', error);
+            if (cameraStatusIndicator) {
+                cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> ERROR';
+                cameraStatusIndicator.style.borderColor = 'var(--danger-color)';
+                cameraStatusIndicator.style.color = 'var(--danger-color)';
+            }
         }
     }
 
     function stopFeed() {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+            currentStream = null;
+        }
         if (feedImg) {
-            feedImg.src = '';
-            // feedImg.src = '/static/images/placeholder_cam.png'; // Optional placeholder
+            feedImg.srcObject = null;
         }
         if (cameraStatusIndicator) {
             cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-power-off"></i> OFFLINE';
@@ -133,36 +166,48 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Capture & Scan Function
     window.captureAndScan = async function () {
-        if (!btnStartInspection) return;
+        if (!btnStartInspection || !feedImg) return;
+
+        const canvas = document.getElementById('capture-canvas');
+        if (!canvas) return;
 
         const originalText = btnStartInspection.innerHTML;
         btnStartInspection.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analyzing...';
         btnStartInspection.disabled = true;
 
         try {
-            const response = await fetch(`/api/capture_and_scan?camera_id=${activeCameraId}`, {
-                method: 'POST'
+            // Setup canvas dimensions to match video
+            canvas.width = feedImg.videoWidth;
+            canvas.height = feedImg.videoHeight;
+
+            // Draw current video frame to canvas
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(feedImg, 0, 0, canvas.width, canvas.height);
+
+            // Convert canvas to Blob
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+
+            // Prepare FormData
+            const formData = new FormData();
+            formData.append('file', blob, 'capture.jpg');
+
+            // Send to existing /api/scan endpoint
+            const response = await fetch('/api/scan', {
+                method: 'POST',
+                body: formData
             });
             const result = await response.json();
 
-            // Show result in a modal or overlay (simplified here to alert/log for now, 
-            // but ideally ideally should update a result container in the UI)
             if (result.success) {
-                // Reuse the scan result box from the upload tab or create a new one for live view
-                // For now, let's alert or update a specific container if we added one.
-                // Since the design had "main-scan-result" in the upload tab, we might want to 
-                // genericize that or duplicate it.
-                // Let's use a simple alert for success/fail feedback or specific UI update if element exists.
-
-                alert(`Scan Complete: ${result.status}\nConfidence: ${result.confidence}\nPart: ${result.matched_part}`);
+                alert(`Inspection Complete: ${result.status}\nConfidence: ${(result.confidence * 100).toFixed(1)}%\nPart: ${result.matched_part || 'Unidentified'}`);
                 updateStats();
             } else {
-                alert('Scan Failed: ' + (result.error || 'Unknown error'));
+                alert('Analysis Failed: ' + (result.error || result.detail || 'Unknown error'));
             }
 
         } catch (error) {
-            console.error('Capture error:', error);
-            alert('Capture failed. See console.');
+            console.error('Capture/Analysis error:', error);
+            alert('Analysis failed. Please check camera and try again.');
         } finally {
             btnStartInspection.innerHTML = originalText;
             btnStartInspection.disabled = false;
