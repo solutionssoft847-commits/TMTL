@@ -243,20 +243,37 @@
     cursor: not-allowed;
 }
 
-/* Responsive adjustments */
 @media (max-width: 768px) {
+    .video-container-3d {
+        aspect-ratio: 4/3;
+        /* Better for vertical mobile screens */
+    }
+
     .guide-box {
-        width: 200px;
-        height: 200px;
+        width: 180px;
+        height: 180px;
+    }
+
+    .guide-text {
+        font-size: 0.9rem;
     }
 
     .camera-controls-3d {
-        flex-direction: column;
-        gap: 10px;
-        align-items: stretch;
+        padding: 0.75rem 1rem;
+    }
+
+    .action-bar-3d {
+        padding: 1rem;
     }
 
     .tech-select {
-        flex: 1;
+        min-width: 0;
+        width: 100%;
+    }
+
+    .hud-corner {
+        width: 25px;
+        height: 25px;
+        border-width: 2px;
     }
 }

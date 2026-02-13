@@ -118,18 +118,18 @@
                 <div class="cv-panel">
                     <div class="panel-header">
                         <div class="tech-tabs" style="margin-bottom: 0; border-bottom: none;">
-                            <button class="tech-tab" data-tab="webcam-main">
+                            <button class="tech-tab active" data-tab="webcam-main">
                                 <i class="fa-solid fa-video"></i> LIVE CAMERA
                             </button>
-                            <button class="tech-tab active" data-tab="upload-main">
+                            <!-- <button class="tech-tab active" data-tab="upload-main">
                                 <i class="fa-solid fa-upload"></i> UPLOAD IMAGE
-                            </button>
+                            </button> -->
                         </div>
                     </div>
 
                     <div class="panel-body">
                         <!-- LIVE FEED TAB -->
-                        <div id="tab-webcam-main" class="tab-content">
+                        <div id="tab-webcam-main" class="tab-content active">
                             <!-- Camera Controls -->
                             <div class="camera-controls-3d">
                                 <div class="control-group">
@@ -152,13 +152,13 @@
                                     <div class="hud-corner bottom-right"></div>
 
                                     <!-- Quality Guide Overlay -->
-                                    <div class="quality-guide">
+                                    <!-- <div class="quality-guide">
                                         <div class="guide-box"></div>
                                         <div class="guide-text">
                                             <i class="fa-solid fa-crosshairs"></i> ALIGN PART HERE
                                             <small>Ensure good lighting & focus</small>
                                         </div>
-                                    </div>
+                                    </div> -->
                                 </div>
                                 <video id="main-inspection-feed" autoplay playsinline class="live-feed-img"
                                     style="object-fit: cover;"></video>
@@ -179,7 +179,7 @@
                         </div>
 
                         <!-- UPLOAD SCAN TAB -->
-                        <div id="tab-upload-main" class="tab-content active">
+                        <div id="tab-upload-main" class="tab-content">
                             <div class="upload-zone tech-border" id="main-upload-zone-wrapper">
                                 <div class="scanner-line"></div>
                                 <i class="fa-solid fa-file-import fa-3x"></i>

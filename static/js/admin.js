@@ -24,6 +24,11 @@ document.addEventListener('DOMContentLoaded', function () {
             e.preventDefault();
             const target = item.getAttribute('data-target');
             switchSection(target);
+
+            // Close sidebar on mobile after click
+            if (window.innerWidth <= 992) {
+                sidebar.classList.remove('open');
+            }
         });
     });
 
