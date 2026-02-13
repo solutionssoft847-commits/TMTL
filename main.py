@@ -23,7 +23,7 @@ from schemas import (
     StatsResponse
 )
 from hf_client import HuggingFaceClient
-# from camera_manager import CameraManager, CameraConfig, FrameQuality
+from camera import CameraManager
 from utils import convert_image_to_bytes, cleanup_old_files
 
 # Configure logging
@@ -57,7 +57,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Initialize managers
 hf_client = HuggingFaceClient()
-# camera_manager = CameraManager(thread_pool_size=4)
+camera_manager = CameraManager()
 
 
 # ==================== IMAGE PROCESSOR ====================
@@ -206,19 +206,10 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Schema migration error: {e}")
 
-    # Initialize cameras from database
-    # try:
-    #     db = next(get_db())
-    #     try:
-    #         cameras = db.query(Camera).filter(Camera.is_active == True).all()
-    #         for cam in cameras:
-    #             config = CameraConfig(resolution=(1920, 1080), fps=30, buffer_size=5, warmup_frames=30)
-    #             camera_manager.add_camera(cam.id, cam.url, config)
-    #             logger.info(f"Initialized camera {cam.id}: {cam.name}")
-    #     finally:
-    #         db.close()
-    # except Exception as e:
-    #     logger.error(f"Error initializing cameras: {e}")
+    # Initialize cameras from database - REMOVED in favor of auto-detection
+    # limit check to first 5 indices to save startup time
+    available_cams = camera_manager.get_available_cameras()
+    logger.info(f"Startup: Auto-detected cameras at indices {available_cams}")
 
     # Start background tasks
     asyncio.create_task(periodic_cleanup())
@@ -231,7 +222,7 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("Shutting down...")
-    # camera_manager.release_all()
+    camera_manager.release_all()
     logger.info("Shutdown complete")
 
 
@@ -248,15 +239,12 @@ async def periodic_cleanup():
 
 async def periodic_camera_health_check():
     """Periodic health check for all cameras"""
+    # Simplified for auto-detection: just log active camera status
     while True:
         try:
             await asyncio.sleep(300)
-            metrics = camera_manager.get_all_metrics()
-            for camera_id, stats in metrics.items():
-                if stats['success_rate'] < 90:
-                    logger.warning(f"Camera {camera_id} health degraded: {stats['success_rate']:.1f}% success rate")
-                if stats['avg_quality_score'] < 60:
-                    logger.warning(f"Camera {camera_id} quality degraded: {stats['avg_quality_score']:.1f} avg quality")
+            if camera_manager.active_camera_id is not None:
+                logger.info(f"Health check: Camera {camera_manager.active_camera_id} is active")
         except Exception as e:
             logger.error(f"Health check error: {e}")
 
@@ -498,106 +486,136 @@ async def scan_image(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# @app.post("/api/capture_and_scan")
-# async def capture_and_scan(
-#     camera_id: Optional[int] = 0,
-#     threshold: float = 0.92,
-#     db: Session = Depends(get_db)
-# ):
-#     """Capture from camera and scan - optimized for speed"""
-#     try:
-#         start_time = time.time()
-# 
-#         # Capture frame (quality assessment is lightweight)
-#         result = camera_manager.capture_frame(
-#             camera_id,
-#             validate_quality=False,  # Skip quality gating for speed
-#             min_quality_score=0.0
-#         )
-# 
-#         if result is None:
-#             if os.getenv("RENDER") or os.getenv("K_SERVICE"):
-#                 return {
-#                     "success": False,
-#                     "error": "Hardware camera not available in cloud environment. Please use 'Upload Scan' instead.",
-#                     "status": "N/A"
-#                 }
-#             raise HTTPException(
-#                 status_code=500,
-#                 detail="Failed to capture frame. Check camera connection."
-#             )
-# 
-#         frame, quality = result
-#         capture_time = time.time() - start_time
-# 
-#         # FAST PATH: Convert to PIL and resize only (skip heavy denoising/sharpening)
-#         img = Image.fromarray(frame)
-#         img = img.resize((224, 224), Image.Resampling.LANCZOS)
-# 
-#         # Detect via HF Space
-#         detection_result = await hf_client.detect_part(img, threshold)
-#         total_time = time.time() - start_time
-# 
-#         status = "PASS" if detection_result.get("matched") else "FAIL"
-# 
-#         # Log to database
-#         log_entry = InspectionLog(
-#             timestamp=datetime.utcnow(),
-#             status=status,
-#             confidence=detection_result.get("confidence", 0.0),
-#             matched_part=detection_result.get("best_match"),
-#             source=f"camera_{camera_id}",
-#             quality_score=quality.quality_score,
-#             image_brightness=quality.brightness,
-#             image_sharpness=quality.sharpness
-#         )
-#         db.add(log_entry)
-#         db.commit()
-# 
-#         # Update camera last_used (non-blocking)
-#         try:
-#             camera_record = db.query(Camera).filter(Camera.id == camera_id).first()
-#             if camera_record:
-#                 camera_record.last_used = datetime.utcnow()
-#                 db.commit()
-#         except:
-#             pass
-# 
-#         logger.info(f"Camera scan: {status} | confidence={detection_result.get('confidence', 0):.3f} | capture={capture_time:.2f}s | total={total_time:.2f}s")
-# 
-#         return {
-#             "success": True,
-#             "status": status,
-#             "confidence": detection_result.get("confidence"),
-#             "matched_part": detection_result.get("best_match"),
-#             "log_id": log_entry.id,
-#             "quality_metrics": {
-#                 "quality_score": round(quality.quality_score, 2),
-#                 "brightness": round(quality.brightness, 2),
-#                 "sharpness": round(quality.sharpness, 2),
-#                 "contrast": round(quality.contrast, 2),
-#                 "is_blurred": quality.is_blurred
-#             },
-#             "timing": {
-#                 "capture_ms": round(capture_time * 1000),
-#                 "total_ms": round(total_time * 1000)
-#             }
-#         }
-# 
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(f"Capture and scan error: {e}", exc_info=True)
-#         db.rollback()
-#         raise HTTPException(status_code=500, detail=str(e))
+@app.post("/api/capture_and_scan")
+async def capture_and_scan(
+    camera_id: Optional[int] = 0,
+    threshold: float = 0.92,
+    db: Session = Depends(get_db)
+):
+    """Capture from camera and scan - optimized for speed"""
+    try:
+        start_time = time.time()
+
+        # Capture frame
+        img = camera_manager.capture_frame(camera_id)
+
+        if img is None:
+            if os.getenv("RENDER") or os.getenv("K_SERVICE"):
+                return {
+                    "success": False,
+                    "error": "Hardware camera not available in cloud environment. Please use 'Upload Scan' instead.",
+                    "status": "N/A"
+                }
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to capture frame. Check camera connection."
+            )
+
+        capture_time = time.time() - start_time
+
+        # Resize for speed/consistency
+        img = img.resize((224, 224), Image.Resampling.LANCZOS)
+
+        # Calculate basic quality metrics
+        img_array = np.array(img)
+        brightness = float(np.mean(img_array))
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+        sharpness = float(laplacian.var())
+
+        # Detect via HF Space
+        detection_result = await hf_client.detect_part(img, threshold)
+        total_time = time.time() - start_time
+
+        status = "PASS" if detection_result.get("matched") else "FAIL"
+
+        # Log to database
+        log_entry = InspectionLog(
+            timestamp=datetime.utcnow(),
+            status=status,
+            confidence=detection_result.get("confidence", 0.0),
+            matched_part=detection_result.get("best_match"),
+            source=f"camera_{camera_id}",
+            quality_score=min(100.0, sharpness / 2),
+            image_brightness=brightness,
+            image_sharpness=sharpness
+        )
+        db.add(log_entry)
+        db.commit()
+
+        logger.info(f"Camera scan: {status} | confidence={detection_result.get('confidence', 0):.3f} | capture={capture_time:.2f}s | total={total_time:.2f}s")
+
+        return {
+            "success": True,
+            "status": status,
+            "confidence": detection_result.get("confidence"),
+            "matched_part": detection_result.get("best_match"),
+            "log_id": log_entry.id,
+            "quality_metrics": {
+                "quality_score": round(min(100.0, sharpness / 2), 2),
+                "brightness": round(brightness, 2),
+                "sharpness": round(sharpness, 2),
+                "contrast": 0.0, # Not calculated for speed
+                "is_blurred": sharpness < 100.0 # Simple threshold
+            },
+            "timing": {
+                "capture_ms": round(capture_time * 1000),
+                "total_ms": round(total_time * 1000)
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Capture and scan error: {e}", exc_info=True)
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==================== CAMERA MANAGEMENT ====================
 
-# @app.get("/api/video_feed")
-# async def video_feed(camera_id: int = 0):
-#     """Stream video feed from camera"""
-#     def generate():
+
+# ==================== CAMERA MANAGEMENT ====================
+
+@app.get("/api/video_feed")
+async def video_feed(camera_id: int = 0):
+    """Stream video feed from camera"""
+    def generate():
+        while True:
+            frame_bytes = camera_manager.get_frame(camera_id)
+            if frame_bytes:
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            else:
+                time.sleep(0.1)  # Wait a bit if frame is not available
+            time.sleep(0.03)  # Approx 30 FPS
+
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+@app.get("/api/cameras")
+async def list_cameras():
+    """List all available cameras (auto-detected)"""
+    try:
+        # Re-scan for cameras on request to handle plug/unplug
+        cameras = camera_manager.get_available_cameras()
+        return [
+            {"id": i, "name": f"Camera {i}", "is_active": True, "camera_type": "usb", "url": str(i)}
+            for i in cameras
+        ]
+    except Exception as e:
+        logger.error(f"Camera list error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 #         while True:
 #             try:
 #                 frame = camera_manager.get_frame(camera_id)

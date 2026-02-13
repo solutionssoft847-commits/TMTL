@@ -34,15 +34,12 @@
                 <a href="#" class="nav-item active" data-target="overview">
                     <i class="fa-solid fa-chart-pie"></i> Overview
                 </a>
-                <!-- <a href="#" class="nav-item" data-target="inspection">
+                <a href="#" class="nav-item" data-target="inspection">
                     <i class="fa-solid fa-camera"></i> Inspection
-                </a> -->
+                </a>
                 <a href="#" class="nav-item" data-target="templates">
                     <i class="fa-solid fa-layer-group"></i> Templates
                 </a>
-                <!-- <a href="#" class="nav-item" data-target="camera">
-                    <i class="fa-solid fa-video"></i> Camera Management
-                </a> -->
                 <a href="#" class="nav-item" data-target="history">
                     <i class="fa-solid fa-clock-rotate-left"></i> History
                 </a>
@@ -118,21 +115,63 @@
                 <div class="cv-panel">
                     <div class="panel-header">
                         <div class="tech-tabs" style="margin-bottom: 0; border-bottom: none;">
-                            <!-- <button class="tech-tab active" data-tab="webcam-main">
-                                <i class="fa-solid fa-video"></i> LIVE FEED
-                            </button> -->
+                            <button class="tech-tab" data-tab="webcam-main">
+                                <i class="fa-solid fa-video"></i> LIVE CAMERA
+                            </button>
                             <button class="tech-tab active" data-tab="upload-main">
-                                <i class="fa-solid fa-upload"></i> UPLOAD SCAN
+                                <i class="fa-solid fa-upload"></i> UPLOAD IMAGE
                             </button>
                         </div>
                     </div>
 
                     <div class="panel-body">
-                        <!-- LIVE FEED TAB (Disabled)
-                        <div id="tab-webcam-main" class="tab-content active">
-                            ...
+                        <!-- LIVE FEED TAB -->
+                        <div id="tab-webcam-main" class="tab-content">
+                            <!-- Camera Controls -->
+                            <div class="camera-controls-3d">
+                                <div class="control-group">
+                                    <label><i class="fa-solid fa-video"></i> Source</label>
+                                    <select id="inspection-camera-select" class="tech-select">
+                                        <option value="0">Detecting cameras...</option>
+                                    </select>
+                                </div>
+                                <div class="status-badge" id="camera-status-indicator">
+                                    <i class="fa-solid fa-circle-notch fa-spin"></i> INITIALIZING
+                                </div>
+                            </div>
+
+                            <!-- 3D Video Container -->
+                            <div class="video-container-3d">
+                                <div class="hud-overlay">
+                                    <div class="hud-corner top-left"></div>
+                                    <div class="hud-corner top-right"></div>
+                                    <div class="hud-corner bottom-left"></div>
+                                    <div class="hud-corner bottom-right"></div>
+
+                                    <!-- Quality Guide Overlay -->
+                                    <div class="quality-guide">
+                                        <div class="guide-box"></div>
+                                        <div class="guide-text">
+                                            <i class="fa-solid fa-crosshairs"></i> ALIGN PART HERE
+                                            <small>Ensure good lighting & focus</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <img src="" alt="Live Feed" id="main-inspection-feed" class="live-feed-img">
+                                <div class="scan-line"></div>
+                            </div>
+
+                            <!-- Action Bar -->
+                            <div class="action-bar-3d">
+                                <button class="btn-3d-primary" id="btn-start-inspection" onclick="captureAndScan()">
+                                    <div class="btn-content">
+                                        <i class="fa-solid fa-bolt"></i>
+                                        <span>CAPTURE & ANALYZE</span>
+                                    </div>
+                                    <div class="btn-shine"></div>
+                                </button>
+                            </div>
                         </div>
-                        -->
 
                         <!-- UPLOAD SCAN TAB -->
                         <div id="tab-upload-main" class="tab-content active">
@@ -215,13 +254,9 @@
                 </div>
             </div>
 
-            <!-- <div id="camera-section" class="content-section">
-                ... 
-            </div> -->
 
-            <!-- <div id="add-camera-modal" class="modal">
-                ...
-            </div> -->
+
+
 
             <div id="history-section" class="content-section">
                 <div class="cv-panel full-height">

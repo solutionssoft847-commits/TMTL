@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const mainUploadBtn = document.getElementById('main-upload-btn');
     const mainFileInput = document.getElementById('main-file-upload');
     const mainScanResultBox = document.getElementById('main-scan-result');
+    const btnStartInspection = document.getElementById('btn-start-inspection');
 
     // ================= NAVIGATION =================
     const navItems = document.querySelectorAll('.nav-item');
@@ -45,24 +46,128 @@ document.addEventListener('DOMContentLoaded', function () {
             if (sectionId === 'history') loadHistory();
 
             // Camera feed management
-            /*
             if (sectionId === 'inspection') {
-                await populateCameraSelector();
-                startFeed(activeCameraId);
+                // Check which tab is active within inspection
+                const activeTab = document.querySelector('.tech-tab.active');
+                if (activeTab && activeTab.getAttribute('data-tab') === 'webcam-main') {
+                    await loadCameras(); // Load and start feed
+                }
             } else {
                 stopFeed();
             }
-            */
         }
     }
 
-    // Camera Feed and Selector Logic Disabled
-    /*
-    function startFeed(cameraId) { ... }
-    function stopFeed() { ... }
-    async function populateCameraSelector() { ... }
-    if (cameraSelect) { ... }
-    */
+    // ================= CAMERA LOGIC =================
+
+    async function loadCameras() {
+        if (!cameraSelect) return;
+
+        try {
+            cameraSelect.innerHTML = '<option value="">Searching...</option>';
+            const response = await fetch('/api/cameras');
+            const cameras = await response.json();
+
+            cameraSelect.innerHTML = '';
+
+            if (cameras.length === 0) {
+                cameraSelect.innerHTML = '<option value="">No cameras found</option>';
+                return;
+            }
+
+            cameras.forEach(cam => {
+                const option = document.createElement('option');
+                option.value = cam.id;
+                option.textContent = cam.name || `Camera ${cam.id}`;
+                cameraSelect.appendChild(option);
+            });
+
+            // Set active camera or default to first
+            if (activeCameraId === null && cameras.length > 0) {
+                activeCameraId = cameras[0].id;
+            }
+
+            cameraSelect.value = activeCameraId;
+            startFeed(activeCameraId);
+
+        } catch (error) {
+            console.error('Error loading cameras:', error);
+            cameraSelect.innerHTML = '<option value="">Error loading cameras</option>';
+        }
+    }
+
+    function startFeed(cameraId) {
+        if (!feedImg) return;
+        activeCameraId = cameraId;
+        // Add timestamp to prevent caching
+        feedImg.src = `/api/video_feed?camera_id=${cameraId}&t=${new Date().getTime()}`;
+
+        if (cameraStatusIndicator) {
+            cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-circle fa-beat" style="color: var(--success-color);"></i> LIVE';
+            cameraStatusIndicator.style.borderColor = 'var(--success-color)';
+            cameraStatusIndicator.style.color = 'var(--success-color)';
+        }
+    }
+
+    function stopFeed() {
+        if (feedImg) {
+            feedImg.src = '';
+            // feedImg.src = '/static/images/placeholder_cam.png'; // Optional placeholder
+        }
+        if (cameraStatusIndicator) {
+            cameraStatusIndicator.innerHTML = '<i class="fa-solid fa-power-off"></i> OFFLINE';
+            cameraStatusIndicator.style.borderColor = '#6c757d';
+            cameraStatusIndicator.style.color = '#6c757d';
+        }
+    }
+
+    // Handle Camera Selection Change
+    if (cameraSelect) {
+        cameraSelect.addEventListener('change', (e) => {
+            const newId = e.target.value;
+            if (newId !== "") {
+                startFeed(newId);
+            }
+        });
+    }
+
+    // Capture & Scan Function
+    window.captureAndScan = async function () {
+        if (!btnStartInspection) return;
+
+        const originalText = btnStartInspection.innerHTML;
+        btnStartInspection.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analyzing...';
+        btnStartInspection.disabled = true;
+
+        try {
+            const response = await fetch(`/api/capture_and_scan?camera_id=${activeCameraId}`, {
+                method: 'POST'
+            });
+            const result = await response.json();
+
+            // Show result in a modal or overlay (simplified here to alert/log for now, 
+            // but ideally ideally should update a result container in the UI)
+            if (result.success) {
+                // Reuse the scan result box from the upload tab or create a new one for live view
+                // For now, let's alert or update a specific container if we added one.
+                // Since the design had "main-scan-result" in the upload tab, we might want to 
+                // genericize that or duplicate it.
+                // Let's use a simple alert for success/fail feedback or specific UI update if element exists.
+
+                alert(`Scan Complete: ${result.status}\nConfidence: ${result.confidence}\nPart: ${result.matched_part}`);
+                updateStats();
+            } else {
+                alert('Scan Failed: ' + (result.error || 'Unknown error'));
+            }
+
+        } catch (error) {
+            console.error('Capture error:', error);
+            alert('Capture failed. See console.');
+        } finally {
+            btnStartInspection.innerHTML = originalText;
+            btnStartInspection.disabled = false;
+        }
+    };
 
     // ================= STATS & OVERVIEW =================
     async function updateStats() {
@@ -120,10 +225,7 @@ document.addEventListener('DOMContentLoaded', function () {
         switchSection('inspection');
     }
 
-    // Capture and Scan Logic Disabled
-    /*
-    window.captureAndScan = async function () { ... };
-    */
+
 
     // ================= INSPECTION: UPLOAD & SCAN =================
     if (mainFileInput) {
@@ -192,12 +294,21 @@ document.addEventListener('DOMContentLoaded', function () {
         if (e.target.classList.contains('tech-tab')) {
             const btn = e.target;
             const parent = btn.parentElement;
+            const tabId = btn.getAttribute('data-tab');
+
             parent.querySelectorAll('.tech-tab').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
             const section = btn.closest('.content-section, .cv-panel');
             section.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            document.getElementById(`tab-${btn.getAttribute('data-tab')}`).classList.add('active');
+            document.getElementById(`tab-${tabId}`).classList.add('active');
+
+            // Handle Camera Feed on Tab Switch
+            if (tabId === 'webcam-main') {
+                loadCameras();
+            } else {
+                stopFeed();
+            }
         }
     });
 
@@ -323,16 +434,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
 
-    // Camera Management Logic Disabled
-    /*
-    window.openAddCameraModal = function () { ... }
-    window.closeAddCameraModal = function () { ... }
-    window.testNewCameraConnection = async function () { ... }
-    window.saveNewCamera = async function () { ... }
-    async function loadCameras() { ... }
-    window.toggleCamera = async function (id, activate) { ... }
-    window.deleteCamera = async function (id) { ... }
-    */
+
 
     // ================= HISTORY =================
     async function loadHistory() {
