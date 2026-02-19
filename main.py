@@ -333,10 +333,10 @@ async def create_template(
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
-    """Upload template images with quality validation"""
+    """Upload samples to a Class Cluster with quality validation"""
     try:
         if len(files) < 1 or len(files) > 10:
-            raise HTTPException(status_code=400, detail="Please upload between 1 and 10 template images")
+            raise HTTPException(status_code=400, detail="Please upload between 1 and 10 samples")
 
         template_images = []
         quality_issues = []
@@ -347,34 +347,45 @@ async def create_template(
 
             is_valid, message = image_processor.validate_image_quality(img)
             if not is_valid:
-                quality_issues.append(f"Image {idx + 1}: {message}")
+                quality_issues.append(f"Sample {idx + 1}: {message}")
                 continue
 
             img_processed = image_processor.prepare_for_detection(img)
             template_images.append(img_processed)
 
-        if len(template_images) < 2:
+        if not template_images:
             raise HTTPException(
                 status_code=400,
-                detail=f"Not enough valid images. Issues: {'; '.join(quality_issues)}"
+                detail=f"No valid images. Issues: {'; '.join(quality_issues)}"
             )
 
+        # Call HF Cloud to add samples to the class cluster
         result = await hf_client.save_template(name, template_images)
         if not result.get("success"):
-            raise HTTPException(status_code=500, detail=result.get("error", "Failed to save template"))
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to register class samples"))
 
-        db_template = Template(
-            name=name,
-            image_count=len(template_images),
-            created_at=datetime.utcnow()
-        )
-        db.add(db_template)
+        # Check if class already exists
+        db_template = db.query(Template).filter(Template.name == name).first()
+        
+        if db_template:
+            # Update existing class cluster
+            db_template.image_count += len(template_images)
+            logger.info(f"Class Cluster '{name}' updated. Total samples: {db_template.image_count}")
+        else:
+            # Create new class cluster
+            db_template = Template(
+                name=name,
+                image_count=len(template_images),
+                created_at=datetime.utcnow()
+            )
+            db.add(db_template)
+            logger.info(f"New Class Cluster '{name}' created with {len(template_images)} samples")
+            
         db.commit()
         db.refresh(db_template)
 
-        logger.info(f"Template '{name}' created with {len(template_images)} images")
         if quality_issues:
-            logger.warning(f"Template '{name}' had quality issues: {quality_issues}")
+            logger.warning(f"Class Cluster '{name}' updates had quality issues: {quality_issues}")
 
         return db_template
 
