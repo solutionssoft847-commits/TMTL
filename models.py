@@ -19,6 +19,7 @@ class InspectionLog(Base):
         return f"<InspectionLog(id={self.id}, status={self.status})>"
 
 class Template(Base):
+    """Represents a Class Cluster in the latent space (e.g. 'Perfect', 'Defected')"""
     __tablename__ = "templates"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -27,7 +28,7 @@ class Template(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     def __repr__(self):
-        return f"<Template(name={self.name})>"
+        return f"<ClassCluster(name={self.name}, samples={self.image_count})>"
 
 class Camera(Base):
     __tablename__ = "cameras"
