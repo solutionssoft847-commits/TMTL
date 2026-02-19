@@ -14,6 +14,7 @@ class InspectionLog(Base):
     quality_score = Column(Float, nullable=True)
     image_brightness = Column(Float, nullable=True)
     image_sharpness = Column(Float, nullable=True)
+    processed_image = Column(Text, nullable=True) # Base64 encoded result image
     
     def __repr__(self):
         return f"<InspectionLog(id={self.id}, status={self.status})>"
