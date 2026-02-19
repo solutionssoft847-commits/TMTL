@@ -133,6 +133,7 @@ class HuggingFaceClient:
             # Parse result
             status_text = result[0] if isinstance(result, (list, tuple)) else str(result)
             label_data = result[1] if isinstance(result, (list, tuple)) and len(result) > 1 else None
+            vis_image = result[2] if isinstance(result, (list, tuple)) and len(result) > 2 else None
             
             confidence = 0.0
             best_match = None
@@ -193,7 +194,8 @@ class HuggingFaceClient:
                 "confidence": confidence,
                 "best_match": best_match,
                 "status_text": status_text,
-                "all_results": status_text
+                "all_results": status_text,
+                "visualization": vis_image
             }
             
         except Exception as e:
