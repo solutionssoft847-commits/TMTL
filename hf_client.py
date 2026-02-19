@@ -56,7 +56,7 @@ class HuggingFaceClient:
                 last_result = self.client.predict(
                     image=handle_file(path),
                     class_name=name,
-                    api_name="add_sample"
+                    api_name="/add_sample"
                 )
                 
                 # Clean up temp file
@@ -79,7 +79,7 @@ class HuggingFaceClient:
         
         try:
             # list_classes returns (string_list, None_or_image)
-            result = self.client.predict(api_name="list_classes")
+            result = self.client.predict(api_name="/list_classes")
             
             # Result is a list/tuple: [text_list, roi_preview]
             status_text = result[0] if isinstance(result, (list, tuple)) else str(result)
@@ -120,7 +120,7 @@ class HuggingFaceClient:
             result = self.client.predict(
                 image=handle_file(temp_path),
                 threshold=threshold,
-                api_name="detect_part"
+                api_name="/detect_part"
             )
             
             # Clean up temp file
