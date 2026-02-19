@@ -117,6 +117,7 @@ class HuggingFaceClient:
             
             # Call the detect_part endpoint
             # Returns [text_output, label_dict, vis, attn, edges]
+            logger.info(f"Sending detection request (threshold={threshold}) to HF api_name='/detect_part'")
             result = self.client.predict(
                 image=handle_file(temp_path),
                 threshold=threshold,
