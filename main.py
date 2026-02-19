@@ -132,18 +132,11 @@ class ImageProcessor:
         return True, "OK"
 
     @staticmethod
-    def prepare_for_detection(img: Image.Image, target_size: tuple = (224, 224)) -> Image.Image:
-        """Prepare image for AI detection"""
+    def prepare_for_detection(img: Image.Image, target_size: tuple = (1024, 1024)) -> Image.Image:
+        """Prepare image for AI detection - higher resolution for localization"""
         img_enhanced = ImageProcessor.enhance_image(img)
         img_enhanced.thumbnail(target_size, Image.Resampling.LANCZOS)
-
-        # Pad to target size
-        final_img = Image.new('RGB', target_size, (128, 128, 128))
-        paste_x = (target_size[0] - img_enhanced.width) // 2
-        paste_y = (target_size[1] - img_enhanced.height) // 2
-        final_img.paste(img_enhanced, (paste_x, paste_y))
-
-        return final_img
+        return img_enhanced
 
 
 image_processor = ImageProcessor()
@@ -468,6 +461,9 @@ async def scan_image(
         # Call HuggingFace detection
         result = await hf_client.detect_part(img_processed, threshold)
 
+        if not result.get("success"):
+            raise HTTPException(status_code=502, detail=f"AI Engine Error: {result.get('error')}")
+
         status = "PASS" if result.get("matched") else "FAIL"
 
         # Log to database
@@ -534,8 +530,8 @@ async def capture_and_scan(
 
         capture_time = time.time() - start_time
 
-        # Resize for speed/consistency
-        img = img.resize((224, 224), Image.Resampling.LANCZOS)
+        # Resize for stability but keep enough resolution for localization (circles)
+        img = img.resize((1024, 1024), Image.Resampling.LANCZOS) if img.width > 1024 else img
 
         # Calculate basic quality metrics
         img_array = np.array(img)
@@ -546,6 +542,14 @@ async def capture_and_scan(
 
         # Detect via HF Space
         detection_result = await hf_client.detect_part(img, threshold)
+        
+        if not detection_result.get("success"):
+            return {
+                "success": False,
+                "error": f"AI Engine Connection Failed: {detection_result.get('error')}",
+                "status": "ERROR"
+            }
+
         total_time = time.time() - start_time
 
         status = "PASS" if detection_result.get("matched") else "FAIL"
