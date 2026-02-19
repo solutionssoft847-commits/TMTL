@@ -465,6 +465,14 @@ async def scan_image(
             raise HTTPException(status_code=502, detail=f"AI Engine Error: {result.get('error')}")
 
         status = "PASS" if result.get("matched") else "FAIL"
+        
+        # Convert visualization image to base64 if it exists
+        vis_base64 = None
+        vis_path = result.get("visualization")
+        if vis_path and os.path.exists(vis_path):
+            with open(vis_path, "rb") as image_file:
+                import base64
+                vis_base64 = base64.b64encode(image_file.read()).decode('utf-8')
 
         # Log to database
         log_entry = InspectionLog(
@@ -475,12 +483,13 @@ async def scan_image(
             source="upload",
             quality_score=min(100.0, sharpness / 2),
             image_brightness=brightness,
-            image_sharpness=sharpness
+            image_sharpness=sharpness,
+            processed_image=vis_base64
         )
         db.add(log_entry)
         db.commit()
 
-        logger.info(f"Scan completed: {status} (confidence: {result.get('confidence', 0):.3f}, brightness: {brightness:.1f}, sharpness: {sharpness:.1f})")
+        logger.info(f"Scan completed: {status} (confidence: {result.get('confidence', 0):.3f})")
 
         return {
             "success": True,
@@ -489,6 +498,7 @@ async def scan_image(
             "matched_part": result.get("best_match"),
             "all_results": result.get("all_results", []),
             "log_id": log_entry.id,
+            "visualization": vis_base64,
             "quality_metrics": {
                 "brightness": round(brightness, 2),
                 "sharpness": round(sharpness, 2)
@@ -553,6 +563,14 @@ async def capture_and_scan(
         total_time = time.time() - start_time
 
         status = "PASS" if detection_result.get("matched") else "FAIL"
+        
+        # Convert visualization image to base64 if it exists
+        vis_base64 = None
+        vis_path = detection_result.get("visualization")
+        if vis_path and os.path.exists(vis_path):
+            with open(vis_path, "rb") as image_file:
+                import base64
+                vis_base64 = base64.b64encode(image_file.read()).decode('utf-8')
 
         # Log to database
         log_entry = InspectionLog(
@@ -563,12 +581,13 @@ async def capture_and_scan(
             source=f"camera_{camera_id}",
             quality_score=min(100.0, sharpness / 2),
             image_brightness=brightness,
-            image_sharpness=sharpness
+            image_sharpness=sharpness,
+            processed_image=vis_base64
         )
         db.add(log_entry)
         db.commit()
 
-        logger.info(f"Camera scan: {status} | confidence={detection_result.get('confidence', 0):.3f} | capture={capture_time:.2f}s | total={total_time:.2f}s")
+        logger.info(f"Camera scan: {status} | confidence={detection_result.get('confidence', 0):.3f} | total={total_time:.2f}s")
 
         return {
             "success": True,
@@ -576,6 +595,7 @@ async def capture_and_scan(
             "confidence": detection_result.get("confidence"),
             "matched_part": detection_result.get("best_match"),
             "log_id": log_entry.id,
+            "visualization": vis_base64,
             "quality_metrics": {
                 "quality_score": round(min(100.0, sharpness / 2), 2),
                 "brightness": round(brightness, 2),
