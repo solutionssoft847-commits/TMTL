@@ -204,7 +204,8 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await response.json();
 
             if (result.success) {
-                alert(`Inspection Complete: ${result.status}\nConfidence: ${(result.confidence * 100).toFixed(1)}%\nPart: ${result.matched_part || 'Unidentified'}`);
+                const statusLabel = result.status === 'PASS' ? '✅ PASS' : result.status === 'FAIL' ? '❌ FAIL' : '⚠️ UNKNOWN';
+                alert(`Inspection Complete: ${statusLabel}\nConfidence: ${(result.confidence * 100).toFixed(1)}%\nPart: ${result.matched_part || 'Unidentified'}`);
                 updateStats();
             } else {
                 alert('Analysis Failed: ' + (result.error || result.detail || 'Unknown error'));
@@ -244,16 +245,21 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             recentHistoryList.innerHTML = data.map(scan => {
-                const isPass = scan.status === 'PASS' || scan.status === 'PERFECT';
-                const statusColor = isPass ? 'var(--success-color)' : 'var(--danger-color)';
-                const icon = isPass ? 'fa-check-circle' : 'fa-triangle-exclamation';
+                let statusColor, icon, label;
+                if (scan.status === 'PASS') {
+                    statusColor = 'var(--success-color)'; icon = 'fa-check-circle'; label = 'PASS';
+                } else if (scan.status === 'FAIL') {
+                    statusColor = 'var(--danger-color)'; icon = 'fa-triangle-exclamation'; label = 'FAIL';
+                } else {
+                    statusColor = '#f59f00'; icon = 'fa-question-circle'; label = 'UNKNOWN';
+                }
 
                 return `
                 <div class="tech-list-item">
                     <div class="tech-item-info">
                         <div class="tech-item-main">
                             <i class="fa-solid ${icon}" style="color: ${statusColor}"></i>
-                            <span style="color: ${statusColor}; font-weight: 700;">${isPass ? 'PASS' : 'FAIL'}</span>
+                            <span style="color: ${statusColor}; font-weight: 700;">${label}</span>
                         </div>
                         <div class="tech-item-time">
                             ${new Date(scan.timestamp).toLocaleTimeString()} | ${scan.matched_part || 'UNIDENTIFIED'}
@@ -320,19 +326,31 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const isPass = result.status === 'PASS' || result.status === 'PERFECT';
+        let statusClass, statusIcon, statusColor, statusLabel;
+        if (result.status === 'PASS') {
+            statusClass = 'pass'; statusIcon = 'fa-check-circle'; statusColor = '#0ca678'; statusLabel = 'PASS';
+        } else if (result.status === 'FAIL') {
+            statusClass = 'fail'; statusIcon = 'fa-triangle-exclamation'; statusColor = '#fa5252'; statusLabel = 'FAIL';
+        } else {
+            statusClass = 'unknown'; statusIcon = 'fa-question-circle'; statusColor = '#f59f00'; statusLabel = 'UNKNOWN';
+        }
         const timing = result.timing ? `${result.timing.total_ms}ms` : '';
+        const confPct = result.confidence != null ? `${(result.confidence * 100).toFixed(1)}%` : '--';
 
         mainScanResultBox.innerHTML = `
-            <div class="tech-result-header ${isPass ? 'pass' : 'fail'}">
-                <i class="fa-solid ${isPass ? 'fa-check-circle' : 'fa-triangle-exclamation'}"></i>
-                <span style="color: ${isPass ? '#0ca678' : '#fa5252'}; font-weight: 800;">${isPass ? 'PASS' : 'FAIL'}</span>
+            <div class="tech-result-header ${statusClass}">
+                <i class="fa-solid ${statusIcon}"></i>
+                <span style="color: ${statusColor}; font-weight: 800;">${statusLabel}</span>
                 ${timing ? `<span style="font-size: 0.7rem; color: #adb5bd; margin-left: auto;">${timing}</span>` : ''}
             </div>
             <div class="tech-result-grid">
                 <div>
                     <span class="tech-metric-label">IDENTIFIED OBJECT</span>
                     <span class="tech-metric-value">${result.matched_part || 'UNKNOWN'}</span>
+                </div>
+                <div>
+                    <span class="tech-metric-label">CONFIDENCE</span>
+                    <span class="tech-metric-value" style="color: ${statusColor};">${confPct}</span>
                 </div>
             </div>
         `;
@@ -522,8 +540,14 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             tbody.innerHTML = data.map(h => {
-                const status = (h.status === 'PASS' || h.status === 'PERFECT') ? 'PASS' : 'FAIL';
-                const statusClass = status.toLowerCase();
+                let status, statusClass;
+                if (h.status === 'PASS') {
+                    status = 'PASS'; statusClass = 'pass';
+                } else if (h.status === 'FAIL') {
+                    status = 'FAIL'; statusClass = 'fail';
+                } else {
+                    status = 'UNKNOWN'; statusClass = 'unknown';
+                }
                 return `
                 <tr>
                     <td class="mono-text">#${h.id.toString().padStart(4, '0')}</td>
