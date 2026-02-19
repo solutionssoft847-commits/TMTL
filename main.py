@@ -435,7 +435,7 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
 @app.post("/api/scan")
 async def scan_image(
     file: UploadFile = File(...),
-    threshold: float = 0.8,
+    threshold: float = 0.92,
     enhance: bool = True,
     db: Session = Depends(get_db)
 ):
@@ -468,13 +468,16 @@ async def scan_image(
         if not result.get("success"):
             raise HTTPException(status_code=502, detail=f"AI Engine Error: {result.get('error')}")
 
-        # Determine industrial pass/fail status
-        best_match = str(result.get("best_match", "")).lower()
-        if result.get("matched") and "perfect" in best_match:
+        # Determine industrial status: PASS / FAIL / UNKNOWN
+        best_match_label = str(result.get("best_match", "UNKNOWN"))
+        if best_match_label == "UNKNOWN":
+            status = "UNKNOWN"
+        elif "perfect" in best_match_label.lower():
             status = "PASS"
-        else:
-            # Fails if below threshold OR matched with 'Defect'/'Defected'
+        elif "defect" in best_match_label.lower():
             status = "FAIL"
+        else:
+            status = "UNKNOWN"
         
         # Convert visualization image to base64 if it exists
         vis_base64 = None
@@ -526,7 +529,7 @@ async def scan_image(
 @app.post("/api/capture_and_scan")
 async def capture_and_scan(
     camera_id: Optional[int] = 0,
-    threshold: float = 0.8,
+    threshold: float = 0.92,
     db: Session = Depends(get_db)
 ):
     """Capture from camera and scan - optimized for speed"""
@@ -572,13 +575,16 @@ async def capture_and_scan(
 
         total_time = time.time() - start_time
 
-        # Determine industrial pass/fail status
-        best_match = str(detection_result.get("best_match", "")).lower()
-        if detection_result.get("matched") and "perfect" in best_match:
+        # Determine industrial status: PASS / FAIL / UNKNOWN
+        best_match_label = str(detection_result.get("best_match", "UNKNOWN"))
+        if best_match_label == "UNKNOWN":
+            status = "UNKNOWN"
+        elif "perfect" in best_match_label.lower():
             status = "PASS"
-        else:
-            # Fails if below threshold OR matched with 'Defect'/'Defected'
+        elif "defect" in best_match_label.lower():
             status = "FAIL"
+        else:
+            status = "UNKNOWN"
         
         # Convert visualization image to base64 if it exists
         vis_base64 = None
