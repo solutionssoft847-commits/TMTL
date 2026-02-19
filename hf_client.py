@@ -37,7 +37,7 @@ class HuggingFaceClient:
                 return None
         return self._client
 
-    async def save_sample(self, name: str, images: List[Image.Image]) -> Dict[str, Any]:
+    async def save_template(self, name: str, images: List[Image.Image]) -> Dict[str, Any]:
         """Save a new part sample to a class cluster on HF Space"""
         if not self.client:
             return {"success": False, "error": "HF Client not initialized"}
@@ -56,7 +56,7 @@ class HuggingFaceClient:
                 last_result = self.client.predict(
                     image=handle_file(path),
                     class_name=name,
-                    api_name="/add_sample"
+                    api_name="add_sample"
                 )
                 
                 # Clean up temp file
@@ -65,11 +65,11 @@ class HuggingFaceClient:
                 except Exception:
                     pass
             
-            logger.info(f"Sample '{name}' added to HF Space cluster: {last_result}")
+            logger.info(f"Template '{name}' added to HF Space cluster: {last_result}")
             return {"success": True, "result": last_result}
             
         except Exception as e:
-            logger.error(f"Error saving sample to HF: {e}")
+            logger.error(f"Error saving template to HF: {e}")
             return {"success": False, "error": str(e)}
 
     async def list_classes(self) -> List[Dict[str, Any]]:
@@ -79,7 +79,7 @@ class HuggingFaceClient:
         
         try:
             # list_classes returns (string_list, None_or_image)
-            result = self.client.predict(api_name="/list_classes")
+            result = self.client.predict(api_name="list_classes")
             
             # Result is a list/tuple: [text_list, roi_preview]
             status_text = result[0] if isinstance(result, (list, tuple)) else str(result)
@@ -120,7 +120,7 @@ class HuggingFaceClient:
             result = self.client.predict(
                 image=handle_file(temp_path),
                 threshold=threshold,
-                api_name="/detect_part"
+                api_name="detect_part"
             )
             
             # Clean up temp file
@@ -138,7 +138,12 @@ class HuggingFaceClient:
             matched = False
             
             # Parse the new status text format
+            raw_error = None
             if status_text:
+                if "⚠️" in status_text or "❌" in status_text:
+                    raw_error = status_text.strip()
+                    logger.warning(f"Feature match warning from HF: {raw_error}")
+
                 lines = status_text.split('\n')
                 for line in lines:
                     # Handle "Cosine Similarity: 95.00%" or "**Cosine Similarity**: 95.00%"
@@ -164,17 +169,21 @@ class HuggingFaceClient:
             # Priority to label_data (Gradio Label object)
             if isinstance(label_data, dict):
                 # Gradio label dict looks like {"label": "class_name", "confidences": [{"label": "A", "value": 0.9}, ...]}
-                # Note: labels might use 'value' or 'confidence' depending on Gradio version
                 best_match = label_data.get('label', best_match)
                 conf_list = label_data.get('confidences', [])
                 if conf_list:
                     max_conf = 0.0
                     for c in conf_list:
+                        # value is standard for Label component
                         conf_val = c.get('value', c.get('confidence', 0.0))
                         if conf_val > max_conf:
                             max_conf = conf_val
                     confidence = max(confidence, max_conf)
             
+            # If we have an error but no match, report it as the best match info
+            if not matched and raw_error:
+                best_match = raw_error if not best_match else f"{best_match} ({raw_error})"
+
             logger.info(f"Multi-Stage Result - Predicted: {best_match}, Confidence: {confidence:.2%}")
             
             return {
@@ -194,6 +203,3 @@ class HuggingFaceClient:
                 "matched": False,
                 "confidence": 0.0
             }
-
-
-
