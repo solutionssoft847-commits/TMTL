@@ -435,7 +435,7 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
 @app.post("/api/scan")
 async def scan_image(
     file: UploadFile = File(...),
-    threshold: float = 0.92,
+    threshold: float = 0.8,
     enhance: bool = True,
     db: Session = Depends(get_db)
 ):
@@ -526,7 +526,7 @@ async def scan_image(
 @app.post("/api/capture_and_scan")
 async def capture_and_scan(
     camera_id: Optional[int] = 0,
-    threshold: float = 0.92,
+    threshold: float = 0.8,
     db: Session = Depends(get_db)
 ):
     """Capture from camera and scan - optimized for speed"""
