@@ -187,7 +187,7 @@ class HuggingFaceClient:
         Run multi-stage detection via /detect_part.
 
         Confidence logic:
-            • confidence < 70 %  → UNKNOWN (invalid)
+            • confidence < 70 %  → UNKNOWN (not matched)
             • confidence ≥ 70 %  → matched with the top class (Perfect / Defect)
         """
         try:
@@ -311,3 +311,4 @@ class HuggingFaceClient:
                 "matched": False,
                 "confidence": 0.0,
             }
+
