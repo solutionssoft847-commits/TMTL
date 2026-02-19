@@ -186,13 +186,17 @@ async def startup_event():
                         conn.execute(text(f"ALTER TABLE cameras ADD COLUMN {col_name} {col_def}"))
                         conn.commit()
 
-            # --- inspection_logs quality columns ---
+            # --- inspection_logs schema migration ---
             if 'inspection_logs' in inspector.get_table_names():
                 log_cols = [col['name'] for col in inspector.get_columns('inspection_logs')]
                 for col_name in ['quality_score', 'image_brightness', 'image_sharpness']:
                     if col_name not in log_cols:
                         conn.execute(text(f"ALTER TABLE inspection_logs ADD COLUMN {col_name} FLOAT"))
                         conn.commit()
+                # Persistence column
+                if 'processed_image' not in log_cols:
+                    conn.execute(text("ALTER TABLE inspection_logs ADD COLUMN processed_image TEXT"))
+                    conn.commit()
 
             logger.info("Database schema migration completed")
 
