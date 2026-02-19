@@ -245,6 +245,37 @@
                                 <input type="file" id="template-files" multiple hidden accept="image/*">
                             </div>
 
+                            <div class="class-selection-group mt-4">
+                                <span class="tech-metric-label">Define Class Classification</span>
+                                <div class="tech-radio-group">
+                                    <label class="tech-radio-card">
+                                        <input type="radio" name="template-class" value="Perfect" checked>
+                                        <div class="radio-content">
+                                            <i class="fa-solid fa-certificate"></i>
+                                            <span>Perfect</span>
+                                        </div>
+                                    </label>
+                                    <label class="tech-radio-card">
+                                        <input type="radio" name="template-class" value="Defect">
+                                        <div class="radio-content">
+                                            <i class="fa-solid fa-bug"></i>
+                                            <span>Defect</span>
+                                        </div>
+                                    </label>
+                                    <label class="tech-radio-card">
+                                        <input type="radio" name="template-class" value="Custom">
+                                        <div class="radio-content">
+                                            <i class="fa-solid fa-pen-to-square"></i>
+                                            <span>Custom</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                <div id="custom-class-input-wrapper" class="hidden" style="margin-top: 15px;">
+                                    <input type="text" id="custom-class-name" class="tech-input"
+                                        placeholder="Enter custom class name...">
+                                </div>
+                            </div>
+
                             <div id="template-preview-list" class="preview-grid-tech"></div>
 
                             <div class="action-bar">
