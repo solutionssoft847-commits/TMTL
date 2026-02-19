@@ -206,9 +206,9 @@
 
             <div id="templates-section" class="content-section">
                 <div class="section-header">
-                    <h2>Template Management</h2>
+                    <h2>Class Library (Latent Space)</h2>
                     <button class="btn-primary" onclick="openTemplateWizard()">
-                        <i class="fa-solid fa-plus"></i> New Template
+                        <i class="fa-solid fa-plus"></i> Train New Class
                     </button>
                 </div>
                 <div id="template-list-view">
@@ -221,23 +221,24 @@
                     <div class="cv-panel">
                         <div class="panel-header">
                             <div>
-                                <h3><i class="fa-solid fa-microchip"></i> Template Calibration</h3>
-                                <p class="tech-sub">Reference Dataset Configuration</p>
+                                <h3><i class="fa-solid fa-microchip"></i> Training</h3>
+                                <p class="tech-sub">Latent Space Cluster Calibration</p>
                             </div>
                             <span class="status-indicator">READY FOR INGEST</span>
                         </div>
                         <div class="panel-body">
                             <div class="instruction-box">
                                 <i class="fa-solid fa-circle-info"></i>
-                                <span>Inject 3-10 "Gold Standard" (Pass) reference images to calibrate the defect
-                                    detection algorithm. Consistency is key.</span>
+                                <span>Inject 3-10 samples to create a "neighborhood" in the latent space.
+                                    Adding more samples to existing classes (e.g. 'Perfect') strengthens the cluster
+                                    centroid.</span>
                             </div>
 
                             <div class="upload-zone tech-border" id="template-upload-zone">
                                 <div class="scanner-line"></div>
                                 <i class="fa-solid fa-upload fa-2x"></i>
-                                <h4>Initialize Reference Dataset</h4>
-                                <p class="mono-text">Drop images or Click to Browse</p>
+                                <h4>Add Class Samples</h4>
+                                <p class="mono-text">Drop samples or Click to Browse</p>
                                 <div class="upload-meta">
                                     <span>Min: 3</span> | <span>Max: 10</span> | <span>Fmt: JPG/PNG</span>
                                 </div>
