@@ -374,6 +374,18 @@ document.addEventListener('DOMContentLoaded', function () {
         resetTemplateWizard();
     };
 
+    // Toggle Custom Class Input
+    const classRadios = document.querySelectorAll('input[name="template-class"]');
+    const customClassWrapper = document.getElementById('custom-class-input-wrapper');
+    const customClassInput = document.getElementById('custom-class-name');
+
+    classRadios.forEach(radio => {
+        radio.addEventListener('change', () => {
+            customClassWrapper.classList.toggle('hidden', radio.value !== 'Custom');
+            if (radio.value === 'Custom') customClassInput.focus();
+        });
+    });
+
     const templateUploadZone = document.getElementById('template-upload-zone');
     const templateFileInput = document.getElementById('template-files');
     const templatePreviewList = document.getElementById('template-preview-list');
@@ -406,7 +418,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
     if (saveTemplateBtn) {
         saveTemplateBtn.addEventListener('click', async () => {
-            const name = prompt("Enter template name (e.g., 'Crankshaft V8'):");
+            const selectedRadio = document.querySelector('input[name="template-class"]:checked');
+            let name = selectedRadio.value;
+
+            if (name === 'Custom') {
+                name = customClassInput.value.trim();
+                if (!name) {
+                    alert("Please enter a custom class name.");
+                    customClassInput.focus();
+                    return;
+                }
+            }
+
             if (!name) return;
 
             const formData = new FormData();
