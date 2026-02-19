@@ -468,7 +468,13 @@ async def scan_image(
         if not result.get("success"):
             raise HTTPException(status_code=502, detail=f"AI Engine Error: {result.get('error')}")
 
-        status = "PASS" if result.get("matched") else "FAIL"
+        # Determine industrial pass/fail status
+        best_match = str(result.get("best_match", "")).lower()
+        if result.get("matched") and "perfect" in best_match:
+            status = "PASS"
+        else:
+            # Fails if below threshold OR matched with 'Defect'/'Defected'
+            status = "FAIL"
         
         # Convert visualization image to base64 if it exists
         vis_base64 = None
@@ -566,7 +572,13 @@ async def capture_and_scan(
 
         total_time = time.time() - start_time
 
-        status = "PASS" if detection_result.get("matched") else "FAIL"
+        # Determine industrial pass/fail status
+        best_match = str(detection_result.get("best_match", "")).lower()
+        if detection_result.get("matched") and "perfect" in best_match:
+            status = "PASS"
+        else:
+            # Fails if below threshold OR matched with 'Defect'/'Defected'
+            status = "FAIL"
         
         # Convert visualization image to base64 if it exists
         vis_base64 = None
