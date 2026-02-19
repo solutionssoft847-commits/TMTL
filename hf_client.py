@@ -100,6 +100,32 @@ class HuggingFaceClient:
             logger.error(f"Error listing classes from HF: {e}")
             return []
 
+    async def delete_template(self, name: str) -> Dict[str, Any]:
+        """Delete a class cluster from the HF Space"""
+        if not self.client:
+            return {"success": False, "error": "HF Client not initialized"}
+        
+        try:
+            # Call the delete_class endpoint we just added to index.py
+            result = self.client.predict(
+                class_name=name,
+                api_name="/delete_class"
+            )
+            
+            # Result is [status_text, roi_view]
+            status_text = result[0] if isinstance(result, (list, tuple)) else str(result)
+            
+            if "✅" in status_text:
+                logger.info(f"Template '{name}' deleted from HF Space")
+                return {"success": True, "result": status_text}
+            else:
+                logger.warning(f"Failed to delete template '{name}' from HF: {status_text}")
+                return {"success": False, "error": status_text}
+                
+        except Exception as e:
+            logger.error(f"Error deleting template from HF: {e}")
+            return {"success": False, "error": str(e)}
+
     async def detect_part(self, image: Image.Image, threshold: float = 0.70) -> Dict[str, Any]:
         """Run multi-stage detection on an image using the HF Space model"""
         if not self.client:
