@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta
 import io
 import time
-from PIL import Image, ImageEnhance
+from PIL import Image
 import asyncio
 import os
 import numpy as np
@@ -63,80 +63,55 @@ camera_manager = CameraManager()
 # ==================== IMAGE PROCESSOR ====================
 
 class ImageProcessor:
-    """Advanced image preprocessing for industrial quality"""
-
-    @staticmethod
-    def enhance_image(img: Image.Image, auto_adjust: bool = True) -> Image.Image:
-        """Enhance image quality for better detection"""
-        img_array = np.array(img)
-
-        # Auto color correction
-        if auto_adjust:
-            img_array = ImageProcessor._auto_color_correction(img_array)
-
-        # Denoise (Faster alternative to prevent timeouts)
-        img_array = cv2.GaussianBlur(img_array, (3, 3), 0)
-
-        # Sharpen
-        kernel = np.array([[-1, -1, -1],
-                           [-1,  9, -1],
-                           [-1, -1, -1]])
-        img_array = cv2.filter2D(img_array, -1, kernel)
-
-        # Convert back to PIL
-        img_enhanced = Image.fromarray(img_array)
-
-        # Enhance contrast and sharpness
-        enhancer = ImageEnhance.Contrast(img_enhanced)
-        img_enhanced = enhancer.enhance(1.2)
-
-        enhancer = ImageEnhance.Sharpness(img_enhanced)
-        img_enhanced = enhancer.enhance(1.3)
-
-        return img_enhanced
-
-    @staticmethod
-    def _auto_color_correction(img: np.ndarray) -> np.ndarray:
-        """Automatic color correction using white balance"""
-        result = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
-        avg_a = np.average(result[:, :, 1])
-        avg_b = np.average(result[:, :, 2])
-        result[:, :, 1] = result[:, :, 1] - ((avg_a - 128) * (result[:, :, 0] / 255.0) * 1.1)
-        result[:, :, 2] = result[:, :, 2] - ((avg_b - 128) * (result[:, :, 0] / 255.0) * 1.1)
-        result = cv2.cvtColor(result, cv2.COLOR_LAB2RGB)
-        return result
+    """Image validation and minimal preprocessing for industrial quality.
+    
+    NOTE: The AI backend performs its own illumination normalization
+    (homomorphic filtering) to remove shadow/lighting artifacts.
+    Client-side enhancement (contrast boost, sharpening, color correction)
+    can FIGHT the backend's normalization and degrade accuracy.
+    We only do validation and safe resizing here.
+    """
 
     @staticmethod
     def validate_image_quality(img: Image.Image, min_resolution: tuple = (320, 240)) -> tuple:
-        """Validate image meets quality standards - Relaxed constraints"""
+        """Validate image meets quality standards"""
         width, height = img.size
 
         if width < min_resolution[0] or height < min_resolution[1]:
             return False, f"Image resolution too low: {width}x{height} (minimum: {min_resolution[0]}x{min_resolution[1]})"
 
         aspect_ratio = width / height
-        if aspect_ratio < 0.2 or aspect_ratio > 5.0:  # Relaxed aspect ratio
+        if aspect_ratio < 0.2 or aspect_ratio > 5.0:
             return False, f"Unusual aspect ratio: {aspect_ratio:.2f}"
 
         img_array = np.array(img)
         brightness = np.mean(img_array)
-        if brightness < 15:  # Relaxed: was 30
+        if brightness < 15:
             return False, "Image too dark"
-        if brightness > 245:  # Relaxed: was 225
+        if brightness > 245:
             return False, "Image too bright"
 
         contrast = np.std(img_array)
-        if contrast < 5:  # Relaxed: was 20
+        if contrast < 5:
             return False, "Image has insufficient contrast"
 
         return True, "OK"
 
     @staticmethod
     def prepare_for_detection(img: Image.Image, target_size: tuple = (1024, 1024)) -> Image.Image:
-        """Prepare image for AI detection - higher resolution for localization"""
-        img_enhanced = ImageProcessor.enhance_image(img)
-        img_enhanced.thumbnail(target_size, Image.Resampling.LANCZOS)
-        return img_enhanced
+        """Prepare image for AI detection — resize only, no enhancement.
+        
+        The backend handles illumination normalization internally.
+        Applying contrast/sharpness/color adjustments here would
+        interfere with the backend's homomorphic filtering and
+        cause light/shadow confusion in the feature extractor.
+        """
+        # Convert to RGB if needed
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        # Only resize if too large (preserve original texture information)
+        img.thumbnail(target_size, Image.Resampling.LANCZOS)
+        return img
 
 
 image_processor = ImageProcessor()
@@ -435,8 +410,7 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
 @app.post("/api/scan")
 async def scan_image(
     file: UploadFile = File(...),
-    threshold: float = 0.92,
-    enhance: bool = True,
+    threshold: float = 0.70,
     db: Session = Depends(get_db)
 ):
     """Scan uploaded image with advanced preprocessing"""
@@ -449,11 +423,8 @@ async def scan_image(
         if not is_valid:
             raise HTTPException(status_code=400, detail=f"Image quality insufficient: {message}")
 
-        # Enhance or resize
-        if enhance:
-            img_processed = image_processor.prepare_for_detection(img)
-        else:
-            img_processed = img.resize((224, 224))
+        # Minimal preprocessing — backend handles illumination normalization
+        img_processed = image_processor.prepare_for_detection(img)
 
         # Assess quality metrics
         img_array = np.array(img_processed)
@@ -468,16 +439,13 @@ async def scan_image(
         if not result.get("success"):
             raise HTTPException(status_code=502, detail=f"AI Engine Error: {result.get('error')}")
 
-        # Determine industrial status: PASS / FAIL / UNKNOWN
-        best_match_label = str(result.get("best_match", "UNKNOWN"))
-        if best_match_label == "UNKNOWN":
-            status = "UNKNOWN"
-        elif "perfect" in best_match_label.lower():
+        # Determine industrial pass/fail status
+        best_match = str(result.get("best_match", "")).lower()
+        if result.get("matched") and "perfect" in best_match:
             status = "PASS"
-        elif "defect" in best_match_label.lower():
-            status = "FAIL"
         else:
-            status = "UNKNOWN"
+            # Fails if below threshold OR matched with 'Defect'/'Defected'
+            status = "FAIL"
         
         # Convert visualization image to base64 if it exists
         vis_base64 = None
@@ -529,7 +497,7 @@ async def scan_image(
 @app.post("/api/capture_and_scan")
 async def capture_and_scan(
     camera_id: Optional[int] = 0,
-    threshold: float = 0.92,
+    threshold: float = 0.70,
     db: Session = Depends(get_db)
 ):
     """Capture from camera and scan - optimized for speed"""
@@ -575,16 +543,13 @@ async def capture_and_scan(
 
         total_time = time.time() - start_time
 
-        # Determine industrial status: PASS / FAIL / UNKNOWN
-        best_match_label = str(detection_result.get("best_match", "UNKNOWN"))
-        if best_match_label == "UNKNOWN":
-            status = "UNKNOWN"
-        elif "perfect" in best_match_label.lower():
+        # Determine industrial pass/fail status
+        best_match = str(detection_result.get("best_match", "")).lower()
+        if detection_result.get("matched") and "perfect" in best_match:
             status = "PASS"
-        elif "defect" in best_match_label.lower():
-            status = "FAIL"
         else:
-            status = "UNKNOWN"
+            # Fails if below threshold OR matched with 'Defect'/'Defected'
+            status = "FAIL"
         
         # Convert visualization image to base64 if it exists
         vis_base64 = None
