@@ -204,8 +204,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const result = await response.json();
 
             if (result.success) {
-                const statusLabel = result.status === 'PASS' ? '✅ PASS' : result.status === 'FAIL' ? '❌ FAIL' : '⚠️ UNKNOWN';
-                alert(`Inspection Complete: ${statusLabel}\nConfidence: ${(result.confidence * 100).toFixed(1)}%\nPart: ${result.matched_part || 'Unidentified'}`);
+                alert(`Inspection Complete: ${result.status}`);
                 updateStats();
             } else {
                 alert('Analysis Failed: ' + (result.error || result.detail || 'Unknown error'));
@@ -245,25 +244,20 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             recentHistoryList.innerHTML = data.map(scan => {
-                let statusColor, icon, label;
-                if (scan.status === 'PASS') {
-                    statusColor = 'var(--success-color)'; icon = 'fa-check-circle'; label = 'PASS';
-                } else if (scan.status === 'FAIL') {
-                    statusColor = 'var(--danger-color)'; icon = 'fa-triangle-exclamation'; label = 'FAIL';
-                } else {
-                    statusColor = '#f59f00'; icon = 'fa-question-circle'; label = 'UNKNOWN';
-                }
+                const status = scan.status === 'PASS' || scan.status === 'PERFECT' ? 'PASS'
+                    : (scan.status === 'UNKNOWN' || scan.matched_part === 'UNKNOWN') ? 'UNKNOWN'
+                        : 'FAIL';
+                const colorMap = { PASS: 'var(--success-color)', FAIL: 'var(--danger-color)', UNKNOWN: '#f59f00' };
+                const iconMap = { PASS: 'fa-check-circle', FAIL: 'fa-triangle-exclamation', UNKNOWN: 'fa-question-circle' };
 
                 return `
                 <div class="tech-list-item">
                     <div class="tech-item-info">
                         <div class="tech-item-main">
-                            <i class="fa-solid ${icon}" style="color: ${statusColor}"></i>
-                            <span style="color: ${statusColor}; font-weight: 700;">${label}</span>
+                            <i class="fa-solid ${iconMap[status]}" style="color: ${colorMap[status]}"></i>
+                            <span style="color: ${colorMap[status]}; font-weight: 700;">${status}</span>
                         </div>
-                        <div class="tech-item-time">
-                            ${new Date(scan.timestamp).toLocaleTimeString()} | ${scan.matched_part || 'UNIDENTIFIED'}
-                        </div>
+                        <div class="tech-item-time">${new Date(scan.timestamp).toLocaleTimeString()}</div>
                     </div>
                 </div>
             `}).join('');
@@ -326,32 +320,16 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        let statusClass, statusIcon, statusColor, statusLabel;
-        if (result.status === 'PASS') {
-            statusClass = 'pass'; statusIcon = 'fa-check-circle'; statusColor = '#0ca678'; statusLabel = 'PASS';
-        } else if (result.status === 'FAIL') {
-            statusClass = 'fail'; statusIcon = 'fa-triangle-exclamation'; statusColor = '#fa5252'; statusLabel = 'FAIL';
-        } else {
-            statusClass = 'unknown'; statusIcon = 'fa-question-circle'; statusColor = '#f59f00'; statusLabel = 'UNKNOWN';
-        }
-        const timing = result.timing ? `${result.timing.total_ms}ms` : '';
-        const confPct = result.confidence != null ? `${(result.confidence * 100).toFixed(1)}%` : '--';
+        const status = result.status === 'PASS' || result.status === 'PERFECT' ? 'PASS'
+            : result.status === 'UNKNOWN' || (result.matched_part === 'UNKNOWN') ? 'UNKNOWN'
+                : 'FAIL';
+        const colorMap = { PASS: '#0ca678', FAIL: '#fa5252', UNKNOWN: '#f59f00' };
+        const iconMap = { PASS: 'fa-check-circle', FAIL: 'fa-triangle-exclamation', UNKNOWN: 'fa-question-circle' };
 
         mainScanResultBox.innerHTML = `
-            <div class="tech-result-header ${statusClass}">
-                <i class="fa-solid ${statusIcon}"></i>
-                <span style="color: ${statusColor}; font-weight: 800;">${statusLabel}</span>
-                ${timing ? `<span style="font-size: 0.7rem; color: #adb5bd; margin-left: auto;">${timing}</span>` : ''}
-            </div>
-            <div class="tech-result-grid">
-                <div>
-                    <span class="tech-metric-label">IDENTIFIED OBJECT</span>
-                    <span class="tech-metric-value">${result.matched_part || 'UNKNOWN'}</span>
-                </div>
-                <div>
-                    <span class="tech-metric-label">CONFIDENCE</span>
-                    <span class="tech-metric-value" style="color: ${statusColor};">${confPct}</span>
-                </div>
+            <div class="tech-result-header ${status.toLowerCase()}">
+                <i class="fa-solid ${iconMap[status]}"></i>
+                <span style="color: ${colorMap[status]}; font-weight: 800;">${status}</span>
             </div>
         `;
         updateStats();
@@ -540,14 +518,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             tbody.innerHTML = data.map(h => {
-                let status, statusClass;
-                if (h.status === 'PASS') {
-                    status = 'PASS'; statusClass = 'pass';
-                } else if (h.status === 'FAIL') {
-                    status = 'FAIL'; statusClass = 'fail';
-                } else {
-                    status = 'UNKNOWN'; statusClass = 'unknown';
-                }
+                const status = (h.status === 'PASS' || h.status === 'PERFECT') ? 'PASS' : 'FAIL';
+                const statusClass = status.toLowerCase();
                 return `
                 <tr>
                     <td class="mono-text">#${h.id.toString().padStart(4, '0')}</td>
