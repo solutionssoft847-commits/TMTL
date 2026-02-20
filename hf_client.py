@@ -4,6 +4,7 @@ import logging
 import tempfile
 import asyncio
 import json
+import re
 from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
 
 class HuggingFaceClientError(Exception):
     """Base exception for client-side errors."""
@@ -27,18 +29,19 @@ class ProcessingError(HuggingFaceClientError):
     """Raised when the AI model fails to process the input."""
     pass
 
+
 class HuggingFaceClient:
 
     DEFAULT_BASE_URL = "https://eho69-arch.hf.space"
-    CONFIDENCE_THRESHOLD = 0.70 
-    
+    CONFIDENCE_THRESHOLD = 0.60  # Softmax probability threshold
+
     def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None):
         self.base_url = (base_url or os.getenv("HF_SPACE_URL", self.DEFAULT_BASE_URL)).rstrip("/")
         self.token = token or os.getenv("HF_TOKEN")
         self.timeout = httpx.Timeout(150.0, connect=10.0)
         self.limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
         self._async_client: Optional[httpx.AsyncClient] = None
-        
+
         logger.info(f"HuggingFaceClient initialised → {self.base_url}")
 
     @property
@@ -69,12 +72,12 @@ class HuggingFaceClient:
                 files = {"files": (os.path.basename(file_path), f, "image/png")}
                 response = await self.client.post("/gradio_api/upload", files=files)
                 response.raise_for_status()
-                
+
             data = response.json()
             if isinstance(data, list) and data:
                 return data[0] if isinstance(data[0], str) else data[0].get("path", "")
             raise ProcessingError(f"Malformed upload response: {data}")
-            
+
         except httpx.HTTPError as e:
             logger.error(f"Upload failed: {e}")
             raise AIServiceUnavailable(f"Network error during upload: {e}")
@@ -85,57 +88,57 @@ class HuggingFaceClient:
         Handles job initiation and subscription to the event stream.
         """
         api_path = f"/gradio_api/call/{api_name.lstrip('/')}"
-        
+
         try:
             # 1. Dispatch the job
             response = await self.client.post(api_path, json={"data": payload})
             response.raise_for_status()
             event_id = response.json().get("event_id")
-            
+
             if not event_id:
                 raise ProcessingError("Protocol Error: No event_id returned by server.")
 
             # 2. Subscribe to the event stream
             result_url = f"{api_path}/{event_id}"
             logger.debug(f"Awaiting result from {result_url}")
-            
+
             async with aconnect_sse(self.client, "GET", result_url) as event_source:
                 async for event in event_source.aiter_sse():
                     if event.event == "error":
                         raise ProcessingError(f"Remote engine error: {event.data}")
-                    
+
                     if not event.data:
                         continue
 
                     try:
                         data = json.loads(event.data)
-                        
+
                         # Handle case where server returns a direct list of results
                         if isinstance(data, list):
                             return data
-                            
+
                         if not isinstance(data, dict):
                             continue
 
                         msg = data.get("msg")
-                        
+
                         # Gradio 4 completion event
                         if msg == "process_completed":
                             output = data.get("output", {})
                             if output.get("error"):
                                 raise ProcessingError(f"Model Inference Error: {output['error']}")
                             return output.get("data", [])
-                        
+
                         # Fail-safe for dictionary responses with 'data' field
                         if not msg and "data" in data:
                             return data["data"]
-                            
+
                     except json.JSONDecodeError:
                         logger.warning(f"Failed to parse SSE line: {event.data}")
                         continue
 
-            raise ProcessingError("Connection Terminated: Stream ended without completion data. The model server might be overloaded.")
-            
+            raise ProcessingError("Connection Terminated: Stream ended without completion data.")
+
         except httpx.HTTPError as e:
             logger.error(f"API communication failure: {e}")
             raise AIServiceUnavailable(f"Remote server unreachable: {e}")
@@ -144,12 +147,12 @@ class HuggingFaceClient:
         """Resolves a remote Gradio file path to a local temporary file."""
         if not remote_path:
             return None
-            
+
         url = remote_path if remote_path.startswith("http") else f"{self.base_url}/file={remote_path}"
         try:
             response = await self.client.get(url)
             response.raise_for_status()
-            
+
             fd, local_path = tempfile.mkstemp(suffix=".png", prefix="hf_result_")
             with os.fdopen(fd, 'wb') as tmp:
                 tmp.write(response.content)
@@ -159,80 +162,168 @@ class HuggingFaceClient:
             return None
 
     # ─────────────────────────────────────────────────────────────────────────────
+    # RESULT PARSING HELPERS
+    # ─────────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _parse_label_data(label_data: Any) -> tuple[str, float, dict]:
+        
+        best_match = "UNKNOWN"
+        confidence = 0.0
+        all_scores = {}
+
+        if not isinstance(label_data, dict):
+            return best_match, confidence, all_scores
+
+        # Gradio Label format with confidences array
+        if "confidences" in label_data:
+            confidences = label_data["confidences"]
+            if isinstance(confidences, list) and confidences:
+                # Sort by confidence descending
+                sorted_conf = sorted(confidences, key=lambda x: x.get("confidence", 0), reverse=True)
+                top = sorted_conf[0]
+                best_match = top.get("label", "UNKNOWN")
+                confidence = float(top.get("confidence", 0.0))
+                all_scores = {c.get("label", ""): float(c.get("confidence", 0.0)) for c in sorted_conf}
+
+        # Direct dict format: {"Perfect": 0.73, "Defected": 0.27}
+        elif all(isinstance(v, (int, float)) for v in label_data.values()):
+            if label_data:
+                sorted_items = sorted(label_data.items(), key=lambda x: x[1], reverse=True)
+                best_match = sorted_items[0][0]
+                confidence = float(sorted_items[0][1])
+                all_scores = {k: float(v) for k, v in sorted_items}
+
+        # Fallback: use "label" key directly
+        elif "label" in label_data:
+            best_match = label_data["label"]
+            confidence = float(label_data.get("confidence", 0.0))
+
+        return best_match, confidence, all_scores
+
+    @staticmethod
+    def _parse_status_text(status_text: str) -> dict:
+        
+        info = {"confidence_pct": None, "raw_similarity": None, "status_line": None}
+
+        if not isinstance(status_text, str):
+            return info
+
+        for line in status_text.split("\n"):
+            if "**Confidence**" in line:
+                match = re.search(r"([\d.]+)%", line)
+                if match:
+                    info["confidence_pct"] = float(match.group(1)) / 100.0
+
+            elif "**Raw Similarity**" in line:
+                match = re.search(r"([\d.]+)", line.split(":")[-1])
+                if match:
+                    info["raw_similarity"] = float(match.group(1))
+
+            elif "**Status**" in line:
+                info["status_line"] = line.split("**Status**:")[-1].strip() if ":" in line else line
+
+        return info
+
+    # ─────────────────────────────────────────────────────────────────────────────
     # PUBLIC DOMAIN LOGIC
     # ─────────────────────────────────────────────────────────────────────────────
 
     async def save_template(self, name: str, images: List[Image.Image]) -> Dict[str, Any]:
-        """Registers training samples for a class cluster."""
+       
         try:
             results = []
             with tempfile.TemporaryDirectory() as tmp_dir:
                 for idx, img in enumerate(images):
+                    # Save as high-quality PNG — no aggressive preprocessing
                     path = Path(tmp_dir) / f"sample_{idx}.png"
                     img.save(path, format="PNG")
-                    
+
                     server_path = await self._upload_file(path)
-                    payload = [{"path": server_path, "meta": {"_type": "gradio.FileData"}}, name]
-                    results.append(await self._call_api("add_sample", payload))
-            
+                    payload = [
+                        {"path": server_path, "meta": {"_type": "gradio.FileData"}},
+                        name
+                    ]
+                    result = await self._call_api("add_sample", payload)
+                    results.append(result)
+
+                    logger.info(f"Training sample {idx+1}/{len(images)} added to '{name}'")
+
             return {"success": True, "result": results[-1] if results else None}
         except Exception as e:
             logger.error(f"Training cluster failed: {e}")
             return {"success": False, "error": str(e)}
 
-    async def detect_part(self, image: Image.Image, threshold: float = 0.92) -> Dict[str, Any]:
+    async def detect_part(self, image: Image.Image, threshold: float = 0.70) -> Dict[str, Any]:
         """
         Executes multi-stage detection pipeline.
         
-        Logic:
-           - Localizes part (Bolt Holes)
-           - Extracts high-dimensional features
-           - Matches via Cosine Similarity
-           - Thresholds for validation (70% standard)
+        Pipeline (on backend):
+           1. Localizes part via bolt hole detection
+           2. Illumination normalization (homomorphic filtering removes shadows)
+           3. Texture-aware feature extraction (mid-level CNN + gradient/Gabor descriptors)
+           4. Softmax-scaled margin matching (τ=0.05)
+        
+        The confidence returned is a softmax probability (0-1), not a raw
+        cosine similarity. A score of 0.70 means the model is 70% confident
+        in the prediction.
         """
         temp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 image.save(tmp.name, format="PNG")
                 temp_path = tmp.name
-            
+
             server_path = await self._upload_file(temp_path)
-            
-            # API Request
-            payload = [{"path": server_path, "meta": {"_type": "gradio.FileData"}}, threshold]
+
+            # Send threshold to backend — it uses this for the matched/unmatched decision
+            payload = [
+                {"path": server_path, "meta": {"_type": "gradio.FileData"}},
+                threshold
+            ]
             result = await self._call_api("detect_part", payload)
-            
+
             if not result or len(result) < 5:
                 raise ProcessingError("Incomplete response from AI model.")
-            
+
             # Parse result tuple: [markdown, label_dict, vis_img, attn_img, edge_img]
             status_text = result[0]
             label_data  = result[1]
             vis_data    = result[2]
-            
-            # Extract metrics
-            confidence = 0.0
-            best_match = "UNKNOWN"
-            
-            if isinstance(label_data, dict) and "confidences" in label_data:
-                top = max(label_data["confidences"], key=lambda x: x.get("confidence", 0), default={})
-                confidence = top.get("confidence", 0.0)
-                best_match = top.get("label", "UNKNOWN")
-            
-            # Validation logic
+            attn_data   = result[3]
+            edge_data   = result[4]
+
+            # ── Extract confidence from label data ───────────────────────────
+            best_match, confidence, all_scores = self._parse_label_data(label_data)
+
+            # ── Fallback: parse from status text if label parsing failed ─────
+            if confidence == 0.0 and isinstance(status_text, str):
+                parsed = self._parse_status_text(status_text)
+                if parsed["confidence_pct"] is not None:
+                    confidence = parsed["confidence_pct"]
+
+            # ── Validation logic ─────────────────────────────────────────────
             status_lower = str(status_text).lower()
             failures = ["no bolt holes", "localization failed", "insufficient hole"]
             is_valid = not any(f in status_lower for f in failures)
-            
+
             if not is_valid or confidence < self.CONFIDENCE_THRESHOLD:
                 best_match = "UNKNOWN"
                 matched = False
             else:
                 matched = True
 
-            # Assets
+            # ── Download visualization assets ────────────────────────────────
             vis_path_remote = vis_data.get("path") if isinstance(vis_data, dict) else None
             local_vis_path = await self._download_asset(vis_path_remote)
+
+            attn_path_remote = attn_data.get("path") if isinstance(attn_data, dict) else None
+            local_attn_path = await self._download_asset(attn_path_remote)
+
+            logger.info(
+                f"Detection result: {best_match} | confidence={confidence:.3f} | "
+                f"matched={matched} | scores={all_scores}"
+            )
 
             return {
                 "success": True,
@@ -241,7 +332,9 @@ class HuggingFaceClient:
                 "best_match": best_match,
                 "status_text": status_text,
                 "all_results": status_text,
-                "visualization": local_vis_path
+                "all_scores": all_scores,
+                "visualization": local_vis_path,
+                "attention_map": local_attn_path,
             }
 
         except Exception as e:
@@ -268,7 +361,13 @@ class HuggingFaceClient:
             classes = []
             for line in str(status).split("\n"):
                 if "•" in line and ":" in line:
-                    n = line.split("•", 1)[-1].split(":", 1)[0].strip()
-                    if n: classes.append({"name": n})
+                    parts = line.split("•", 1)[-1].split(":", 1)
+                    name = parts[0].strip()
+                    count_str = parts[1].strip() if len(parts) > 1 else ""
+                    count_match = re.search(r"(\d+)", count_str)
+                    count = int(count_match.group(1)) if count_match else 0
+                    if name:
+                        classes.append({"name": name, "sample_count": count})
             return classes
-        except: return []
+        except Exception:
+            return []
