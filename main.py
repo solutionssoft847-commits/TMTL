@@ -205,6 +205,7 @@ async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("Shutting down...")
     camera_manager.release_all()
+    await hf_client.close()   # Close the shared httpx.AsyncClient
     logger.info("Shutdown complete")
 
 
@@ -447,13 +448,28 @@ async def scan_image(
             # Fails if below threshold OR matched with 'Defect'/'Defected'
             status = "FAIL"
         
-        # Convert visualization image to base64 if it exists
+        # Convert visualization image to base64 then immediately delete the
+        # temp file so downloaded assets do not accumulate on disk.
+        import base64
         vis_base64 = None
         vis_path = result.get("visualization")
         if vis_path and os.path.exists(vis_path):
-            with open(vis_path, "rb") as image_file:
-                import base64
-                vis_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+            try:
+                with open(vis_path, "rb") as image_file:
+                    vis_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+            finally:
+                # Always delete temp asset after reading
+                try:
+                    os.remove(vis_path)
+                except OSError:
+                    pass
+        # Clean up any other temp assets returned by the client
+        for extra_path in result.get("_temp_paths", []):
+            if extra_path and extra_path != vis_path:
+                try:
+                    os.remove(extra_path)
+                except OSError:
+                    pass
 
         # Log to database
         log_entry = InspectionLog(
@@ -551,13 +567,27 @@ async def capture_and_scan(
             # Fails if below threshold OR matched with 'Defect'/'Defected'
             status = "FAIL"
         
-        # Convert visualization image to base64 if it exists
+        # Convert visualization image to base64 then immediately delete the
+        # temp file so downloaded assets do not accumulate on disk.
+        import base64
         vis_base64 = None
         vis_path = detection_result.get("visualization")
         if vis_path and os.path.exists(vis_path):
-            with open(vis_path, "rb") as image_file:
-                import base64
-                vis_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+            try:
+                with open(vis_path, "rb") as image_file:
+                    vis_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+            finally:
+                try:
+                    os.remove(vis_path)
+                except OSError:
+                    pass
+        # Clean up any other temp assets returned by the client
+        for extra_path in detection_result.get("_temp_paths", []):
+            if extra_path and extra_path != vis_path:
+                try:
+                    os.remove(extra_path)
+                except OSError:
+                    pass
 
         # Log to database
         log_entry = InspectionLog(
