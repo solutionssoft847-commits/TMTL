@@ -109,6 +109,14 @@ class HuggingFaceClient:
 
                     try:
                         data = json.loads(event.data)
+                        
+                        # Handle case where server returns a direct list of results
+                        if isinstance(data, list):
+                            return data
+                            
+                        if not isinstance(data, dict):
+                            continue
+
                         msg = data.get("msg")
                         
                         # Gradio 4 completion event
@@ -118,7 +126,7 @@ class HuggingFaceClient:
                                 raise ProcessingError(f"Model Inference Error: {output['error']}")
                             return output.get("data", [])
                         
-                        # Fail-safe for synchronous-like responses
+                        # Fail-safe for dictionary responses with 'data' field
                         if not msg and "data" in data:
                             return data["data"]
                             
