@@ -3,10 +3,8 @@ import io
 import logging
 import tempfile
 import asyncio
-import base64
 import json
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 
 import httpx
@@ -14,18 +12,15 @@ from httpx_sse import aconnect_sse
 from PIL import Image
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
-
-# Configure logging to integrate with the main app's logging system
 logger = logging.getLogger(__name__)
 
 class HuggingFaceClientError(Exception):
-    """Base exception for HuggingFaceClient errors."""
+    """Base exception for client-side errors."""
     pass
 
 class AIServiceUnavailable(HuggingFaceClientError):
-    """Raised when the remote AI service is unreachable or returns 503."""
+    """Raised when the remote AI service is unreachable."""
     pass
 
 class ProcessingError(HuggingFaceClientError):
@@ -33,27 +28,21 @@ class ProcessingError(HuggingFaceClientError):
     pass
 
 class HuggingFaceClient:
-    
+
     DEFAULT_BASE_URL = "https://eho69-arch.hf.space"
-    CONFIDENCE_THRESHOLD = 0.70  # Industrial standard for "Unknown" classification
+    CONFIDENCE_THRESHOLD = 0.70 
     
     def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None):
-        
         self.base_url = (base_url or os.getenv("HF_SPACE_URL", self.DEFAULT_BASE_URL)).rstrip("/")
         self.token = token or os.getenv("HF_TOKEN")
-        
-        # Configuration for stability
-        self.timeout = httpx.Timeout(120.0, connect=10.0)
-        self.limits = httpx.Limits(max_connections=10, max_keepalive_connections=5)
-        
-        # Initialise shared async client lazily to ensure it runs in the correct event loop
+        self.timeout = httpx.Timeout(150.0, connect=10.0)
+        self.limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
         self._async_client: Optional[httpx.AsyncClient] = None
         
-        logger.info(f"HuggingFaceClient initialised | Target: {self.base_url}")
+        logger.info(f"HuggingFaceClient initialised → {self.base_url}")
 
     @property
     def client(self) -> httpx.AsyncClient:
-        
         if self._async_client is None or self._async_client.is_closed:
             headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
             self._async_client = httpx.AsyncClient(
@@ -66,111 +55,99 @@ class HuggingFaceClient:
         return self._async_client
 
     async def close(self):
-        """Cleanly close the underlying HTTP session."""
         if self._async_client and not self._async_client.is_closed:
             await self._async_client.aclose()
-            logger.debug("HuggingFaceClient session closed.")
 
     # ─────────────────────────────────────────────────────────────────────────────
-    # CORE COMMUNICATION LAYER
+    # INTERNAL PROTOCOL LAYER
     # ─────────────────────────────────────────────────────────────────────────────
 
     async def _upload_file(self, file_path: Union[str, Path]) -> str:
-        """
-        Uploads a file to the Gradio server and returns the internal server path.
-        """
-        client = self.client
-        path = Path(file_path)
-        
+        """Uploads a file to Gradio transient storage."""
         try:
-            with open(path, "rb") as f:
-                logger.debug(f"Uploading file: {path.name}")
-                files = {"files": (path.name, f, "image/png")}
-                response = await client.post("/gradio_api/upload", files=files)
+            with open(file_path, "rb") as f:
+                files = {"files": (os.path.basename(file_path), f, "image/png")}
+                response = await self.client.post("/gradio_api/upload", files=files)
                 response.raise_for_status()
                 
             data = response.json()
-            # Gradio typically returns a list of paths or dicts
             if isinstance(data, list) and data:
-                entry = data[0]
-                return entry if isinstance(entry, str) else entry.get("path", "")
-                
-            raise ProcessingError(f"Unexpected upload response format: {data}")
+                return data[0] if isinstance(data[0], str) else data[0].get("path", "")
+            raise ProcessingError(f"Malformed upload response: {data}")
             
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Upload failed (HTTP {e.response.status_code}): {e.response.text}")
-            raise AIServiceUnavailable(f"Remote storage unreachable: {e}")
-        except Exception as e:
-            logger.error(f"File upload exception: {e}")
-            raise HuggingFaceClientError(f"Local file I/O or network error: {e}")
+        except httpx.HTTPError as e:
+            logger.error(f"Upload failed: {e}")
+            raise AIServiceUnavailable(f"Network error during upload: {e}")
 
     async def _call_api(self, api_name: str, payload: List[Any]) -> List[Any]:
-        client = self.client
-        api_path = f"/gradio_api/call{api_name if api_name.startswith('/') else '/' + api_name}"
+        """
+        State-machine for Gradio SSE protocol.
+        Handles job initiation and subscription to the event stream.
+        """
+        api_path = f"/gradio_api/call/{api_name.lstrip('/')}"
         
         try:
-            # 1. Start the job
-            response = await client.post(api_path, json={"data": payload})
+            # 1. Dispatch the job
+            response = await self.client.post(api_path, json={"data": payload})
             response.raise_for_status()
             event_id = response.json().get("event_id")
             
             if not event_id:
-                raise ProcessingError("Failed to initiate processing: No event_id returned.")
+                raise ProcessingError("Protocol Error: No event_id returned by server.")
 
-            # 2. Listen for completion via Server-Sent Events
+            # 2. Subscribe to the event stream
             result_url = f"{api_path}/{event_id}"
             logger.debug(f"Awaiting result from {result_url}")
             
-            async with aconnect_sse(client, "GET", result_url) as event_source:
+            async with aconnect_sse(self.client, "GET", result_url) as event_source:
                 async for event in event_source.aiter_sse():
                     if event.event == "error":
                         raise ProcessingError(f"Remote engine error: {event.data}")
                     
-                    if event.data:
-                        try:
-                            data = json.loads(event.data)
-                            # Look for the completion message or the final data payload
-                            if isinstance(data, dict):
-                                if data.get("msg") == "process_completed":
-                                    return data.get("output", {}).get("data", [])
-                                elif "data" in data and not data.get("msg"):
-                                    # Fallback for simpler responses
-                                    return data["data"]
-                        except json.JSONDecodeError:
-                            continue
+                    if not event.data:
+                        continue
 
-            raise ProcessingError("Stream ended without completion event.")
+                    try:
+                        data = json.loads(event.data)
+                        msg = data.get("msg")
+                        
+                        # Gradio 4 completion event
+                        if msg == "process_completed":
+                            output = data.get("output", {})
+                            if output.get("error"):
+                                raise ProcessingError(f"Model Inference Error: {output['error']}")
+                            return output.get("data", [])
+                        
+                        # Fail-safe for synchronous-like responses
+                        if not msg and "data" in data:
+                            return data["data"]
+                            
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse SSE line: {event.data}")
+                        continue
+
+            raise ProcessingError("Connection Terminated: Stream ended without completion data. The model server might be overloaded.")
             
         except httpx.HTTPError as e:
-            logger.error(f"API Call failed: {e}")
-            raise AIServiceUnavailable(f"AI engine communication failure: {e}")
+            logger.error(f"API communication failure: {e}")
+            raise AIServiceUnavailable(f"Remote server unreachable: {e}")
 
     async def _download_asset(self, remote_path: str) -> Optional[str]:
-        """
-        Downloads a remote asset to a local temporary file.
-        This is critical because the main application expects local file paths for processing.
-        """
+        """Resolves a remote Gradio file path to a local temporary file."""
         if not remote_path:
             return None
             
-        client = self.client
-        # Build full URL if it's a relative path from the server
         url = remote_path if remote_path.startswith("http") else f"{self.base_url}/file={remote_path}"
-        
         try:
-            logger.debug(f"Downloading visualization: {url}")
-            response = await client.get(url)
+            response = await self.client.get(url)
             response.raise_for_status()
             
-            # Save to an industrial-grade temporary file
-            suffix = Path(remote_path).suffix or ".png"
-            fd, local_path = tempfile.mkstemp(suffix=suffix, prefix="hf_vis_")
+            fd, local_path = tempfile.mkstemp(suffix=".png", prefix="hf_result_")
             with os.fdopen(fd, 'wb') as tmp:
                 tmp.write(response.content)
-            
             return local_path
         except Exception as e:
-            logger.warning(f"Failed to download visualization asset: {e}")
+            logger.warning(f"Visualization download failed: {e}")
             return None
 
     # ─────────────────────────────────────────────────────────────────────────────
@@ -178,89 +155,74 @@ class HuggingFaceClient:
     # ─────────────────────────────────────────────────────────────────────────────
 
     async def save_template(self, name: str, images: List[Image.Image]) -> Dict[str, Any]:
-        """
-        Registers new training samples for a specific part class.
-        
-        Args:
-            name: The class name (e.g., "Perfect").
-            images: List of PIL images to upload.
-        """
+        """Registers training samples for a class cluster."""
         try:
-            logger.info(f"Registering {len(images)} samples for class '{name}'")
-            last_result = None
-            
+            results = []
             with tempfile.TemporaryDirectory() as tmp_dir:
                 for idx, img in enumerate(images):
-                    local_path = Path(tmp_dir) / f"sample_{idx}.png"
-                    # Use high quality for feature extraction
-                    img.save(local_path, format="PNG", optimize=True)
+                    path = Path(tmp_dir) / f"sample_{idx}.png"
+                    img.save(path, format="PNG")
                     
-                    # Upload and notify the model
-                    server_path = await self._upload_file(local_path)
+                    server_path = await self._upload_file(path)
                     payload = [{"path": server_path, "meta": {"_type": "gradio.FileData"}}, name]
-                    last_result = await self._call_api("add_sample", payload)
+                    results.append(await self._call_api("add_sample", payload))
             
-            return {"success": True, "result": last_result}
-            
+            return {"success": True, "result": results[-1] if results else None}
         except Exception as e:
-            logger.error(f"Template registration failed for {name}: {e}")
+            logger.error(f"Training cluster failed: {e}")
             return {"success": False, "error": str(e)}
 
     async def detect_part(self, image: Image.Image, threshold: float = 0.92) -> Dict[str, Any]:
-       
+        """
+        Executes multi-stage detection pipeline.
+        
+        Logic:
+           - Localizes part (Bolt Holes)
+           - Extracts high-dimensional features
+           - Matches via Cosine Similarity
+           - Thresholds for validation (70% standard)
+        """
         temp_path = None
         try:
-            # 1. Prepare and Upload
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 image.save(tmp.name, format="PNG")
                 temp_path = tmp.name
             
             server_path = await self._upload_file(temp_path)
             
-            # 2. Inference
+            # API Request
             payload = [{"path": server_path, "meta": {"_type": "gradio.FileData"}}, threshold]
-            result_list = await self._call_api("detect_part", payload)
+            result = await self._call_api("detect_part", payload)
             
-            if not result_list or len(result_list) < 5:
-                raise ProcessingError(f"Model returned incomplete result set (len={len(result_list)})")
+            if not result or len(result) < 5:
+                raise ProcessingError("Incomplete response from AI model.")
             
-            # Parse Gradio 5-tuple: [markdown, label_dict, vis_img, attn_img, edge_img]
-            status_text = result_list[0]
-            label_data  = result_list[1]
-            vis_data    = result_list[2]
+            # Parse result tuple: [markdown, label_dict, vis_img, attn_img, edge_img]
+            status_text = result[0]
+            label_data  = result[1]
+            vis_data    = result[2]
             
-            # 3. Decision Logic (The 70% Confidence Gate)
+            # Extract metrics
             confidence = 0.0
             best_match = "UNKNOWN"
             
             if isinstance(label_data, dict) and "confidences" in label_data:
-                # Extract highest confidence from label component
-                conf_entries = label_data["confidences"]
-                if conf_entries:
-                    top_entry = max(conf_entries, key=lambda x: x.get("confidence", 0))
-                    confidence = top_entry.get("confidence", 0)
-                    best_match = top_entry.get("label", "UNKNOWN")
-            elif isinstance(label_data, dict) and "label" in label_data:
-                # Fallback for simple label format
-                best_match = label_data.get("label", "UNKNOWN")
-                confidence = 1.0 # Boolean match if no confidence provided
-                
-            # 4. Semantic Validation
+                top = max(label_data["confidences"], key=lambda x: x.get("confidence", 0), default={})
+                confidence = top.get("confidence", 0.0)
+                best_match = top.get("label", "UNKNOWN")
+            
+            # Validation logic
             status_lower = str(status_text).lower()
-            critical_failures = ["no bolt holes", "localization failed", "insufficient hole", "unconfigured"]
+            failures = ["no bolt holes", "localization failed", "insufficient hole"]
+            is_valid = not any(f in status_lower for f in failures)
             
-            is_valid_detection = not any(fail in status_lower for fail in critical_failures)
-            
-            # Final confidence gate
-            if not is_valid_detection or confidence < self.CONFIDENCE_THRESHOLD:
-                logger.warning(f"Detection gated → valid={is_valid_detection}, conf={confidence:.2%}")
+            if not is_valid or confidence < self.CONFIDENCE_THRESHOLD:
                 best_match = "UNKNOWN"
                 matched = False
             else:
                 matched = True
-                logger.info(f"Detection verified → {best_match} ({confidence:.2%})")
 
-            # 5. Visualization Handling (Download for local processing)
+            # Assets
             vis_path_remote = vis_data.get("path") if isinstance(vis_data, dict) else None
             local_vis_path = await self._download_asset(vis_path_remote)
 
@@ -275,41 +237,30 @@ class HuggingFaceClient:
             }
 
         except Exception as e:
-            logger.error(f"Detection pipeline failed: {e}", exc_info=True)
+            logger.error(f"Scan pipeline failed: {e}", exc_info=True)
             return {"success": False, "error": str(e), "matched": False, "confidence": 0.0}
-            
         finally:
-            # Local cleanup
             if temp_path and os.path.exists(temp_path):
                 try: os.remove(temp_path)
                 except: pass
 
     async def delete_template(self, name: str) -> Dict[str, Any]:
-        """Removes a class cluster from the remote model."""
+        """Deactivates a class cluster."""
         try:
-            result = await self._call_api("delete_class", [name])
-            result_str = str(result[0]) if result else ""
-            if "✅" in result_str:
-                return {"success": True, "result": result_str}
-            return {"success": False, "error": result_str}
+            res = await self._call_api("delete_class", [name])
+            return {"success": True, "result": res[0] if res else ""}
         except Exception as e:
-            logger.error(f"Deactivation failed for {name}: {e}")
             return {"success": False, "error": str(e)}
 
     async def list_classes(self) -> List[Dict[str, Any]]:
-        """Queries the current registry of trained parts."""
+        """Queries the trained part registry."""
         try:
-            result = await self._call_api("list_classes", [])
-            status_text = result[0] if result else ""
-            
+            res = await self._call_api("list_classes", [])
+            status = res[0] if res else ""
             classes = []
-            # Parse the bulleted list from markdown
-            for line in str(status_text).split("\n"):
+            for line in str(status).split("\n"):
                 if "•" in line and ":" in line:
-                    name = line.split("•", 1)[-1].split(":", 1)[0].strip()
-                    if name:
-                        classes.append({"name": name})
+                    n = line.split("•", 1)[-1].split(":", 1)[0].strip()
+                    if n: classes.append({"name": n})
             return classes
-        except Exception as e:
-            logger.error(f"Class discovery failed: {e}")
-            return []
+        except: return []
