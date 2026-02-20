@@ -31,6 +31,18 @@ class ProcessingError(HuggingFaceClientError):
 
 
 class HuggingFaceClient:
+    """
+    Client for the Engine Part CV backend (Gradio SSE protocol).
+    
+    The backend uses:
+      - Illumination-normalized texture features (homomorphic filtering)
+      - Mid-level CNN features (layer2+layer3) + handcrafted texture descriptors
+      - Softmax-scaled margin-based confidence scoring (τ=0.05)
+    
+    Confidence values are proper probabilities (0–1) from softmax, NOT raw
+    cosine similarities. A confidence of 0.70 means the model is 70% sure
+    about the top class.
+    """
 
     DEFAULT_BASE_URL = "https://eho69-arch.hf.space"
     CONFIDENCE_THRESHOLD = 0.60  # Softmax probability threshold
@@ -161,13 +173,35 @@ class HuggingFaceClient:
             logger.warning(f"Visualization download failed: {e}")
             return None
 
+    @staticmethod
+    def _cleanup_temp_file(path: Optional[str]) -> None:
+        """Safely remove a temporary file, suppressing all errors."""
+        if path:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
     # ─────────────────────────────────────────────────────────────────────────────
     # RESULT PARSING HELPERS
     # ─────────────────────────────────────────────────────────────────────────────
 
     @staticmethod
     def _parse_label_data(label_data: Any) -> tuple[str, float, dict]:
+        """
+        Parse the Gradio Label component output.
         
+        Gradio Label returns:
+          {"label": "Perfect", "confidences": [
+              {"label": "Perfect", "confidence": 0.73},
+              {"label": "Defected", "confidence": 0.27}
+          ]}
+        
+        The confidences are now softmax probabilities (proper 0-1 range),
+        NOT raw cosine similarities.
+        
+        Returns: (best_match, confidence, all_scores)
+        """
         best_match = "UNKNOWN"
         confidence = 0.0
         all_scores = {}
@@ -203,7 +237,14 @@ class HuggingFaceClient:
 
     @staticmethod
     def _parse_status_text(status_text: str) -> dict:
+        """
+        Extract structured data from the match report markdown.
         
+        Parses lines like:
+          📊 **Confidence**: 73.24%
+          📏 **Raw Similarity**: 0.9412
+          🎯 **Status**: ✅ PASS: Perfect
+        """
         info = {"confidence_pct": None, "raw_similarity": None, "status_line": None}
 
         if not isinstance(status_text, str):
@@ -230,7 +271,14 @@ class HuggingFaceClient:
     # ─────────────────────────────────────────────────────────────────────────────
 
     async def save_template(self, name: str, images: List[Image.Image]) -> Dict[str, Any]:
-       
+        """
+        Registers training samples for a class cluster.
+        
+        IMPORTANT: Send raw/minimally processed images. The backend performs
+        its own illumination normalization (homomorphic filtering) before
+        feature extraction. Excessive client-side enhancement (contrast boost,
+        sharpening) can actually degrade feature quality.
+        """
         try:
             results = []
             with tempfile.TemporaryDirectory() as tmp_dir:
@@ -255,20 +303,10 @@ class HuggingFaceClient:
             return {"success": False, "error": str(e)}
 
     async def detect_part(self, image: Image.Image, threshold: float = 0.70) -> Dict[str, Any]:
-        """
-        Executes multi-stage detection pipeline.
         
-        Pipeline (on backend):
-           1. Localizes part via bolt hole detection
-           2. Illumination normalization (homomorphic filtering removes shadows)
-           3. Texture-aware feature extraction (mid-level CNN + gradient/Gabor descriptors)
-           4. Softmax-scaled margin matching (τ=0.05)
-        
-        The confidence returned is a softmax probability (0-1), not a raw
-        cosine similarity. A score of 0.70 means the model is 70% confident
-        in the prediction.
-        """
         temp_path = None
+        local_vis_path = None
+        local_attn_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 image.save(tmp.name, format="PNG")
@@ -313,7 +351,9 @@ class HuggingFaceClient:
             else:
                 matched = True
 
-            # ── Download visualization assets ────────────────────────────────
+            # ── Download visualization assets ─────────────────────────────────
+            # Files are downloaded to temp, read to bytes, then immediately deleted
+            # to prevent unbounded accumulation of temp files on disk.
             vis_path_remote = vis_data.get("path") if isinstance(vis_data, dict) else None
             local_vis_path = await self._download_asset(vis_path_remote)
 
@@ -325,6 +365,8 @@ class HuggingFaceClient:
                 f"matched={matched} | scores={all_scores}"
             )
 
+            # Return the local file path; the CALLER (main.py) converts to base64
+            # and must delete the temp files afterwards.
             return {
                 "success": True,
                 "matched": matched,
@@ -335,15 +377,23 @@ class HuggingFaceClient:
                 "all_scores": all_scores,
                 "visualization": local_vis_path,
                 "attention_map": local_attn_path,
+                # Internal flag so the caller knows which paths to clean up
+                "_temp_paths": [p for p in [local_vis_path, local_attn_path] if p],
             }
 
         except Exception as e:
             logger.error(f"Scan pipeline failed: {e}", exc_info=True)
+            # Clean up any partially-downloaded assets on failure
+            self._cleanup_temp_file(local_vis_path)
+            self._cleanup_temp_file(local_attn_path)
             return {"success": False, "error": str(e), "matched": False, "confidence": 0.0}
         finally:
+            # Always clean up the input temp file
             if temp_path and os.path.exists(temp_path):
-                try: os.remove(temp_path)
-                except: pass
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     async def delete_template(self, name: str) -> Dict[str, Any]:
         """Deactivates a class cluster."""
