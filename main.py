@@ -63,15 +63,7 @@ camera_manager = CameraManager()
 # ==================== IMAGE PROCESSOR ====================
 
 class ImageProcessor:
-    """Image validation and minimal preprocessing for industrial quality.
     
-    NOTE: The AI backend performs its own illumination normalization
-    (homomorphic filtering) to remove shadow/lighting artifacts.
-    Client-side enhancement (contrast boost, sharpening, color correction)
-    can FIGHT the backend's normalization and degrade accuracy.
-    We only do validation and safe resizing here.
-    """
-
     @staticmethod
     def validate_image_quality(img: Image.Image, min_resolution: tuple = (320, 240)) -> tuple:
         """Validate image meets quality standards"""
