@@ -255,9 +255,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="tech-item-info">
                         <div class="tech-item-main">
                             <i class="fa-solid ${iconMap[status]}" style="color: ${colorMap[status]}"></i>
-                            <span style="color: ${colorMap[status]}; font-weight: 700;">${status}</span>
+                            <span style="color: ${colorMap[status]}; font-weight: 700;">${status}: ${scan.matched_part || 'UNKNOWN'}</span>
                         </div>
-                        <div class="tech-item-time">${new Date(scan.timestamp).toLocaleTimeString()}</div>
+                        <div class="tech-item-time">${new Date(scan.timestamp).toLocaleTimeString()} - ${(scan.confidence * 100).toFixed(1)}%</div>
                     </div>
                 </div>
             `}).join('');
@@ -326,10 +326,31 @@ document.addEventListener('DOMContentLoaded', function () {
         const colorMap = { PASS: '#0ca678', FAIL: '#fa5252', UNKNOWN: '#f59f00' };
         const iconMap = { PASS: 'fa-check-circle', FAIL: 'fa-triangle-exclamation', UNKNOWN: 'fa-question-circle' };
 
+        let scoresHtml = '';
+        if (result.all_results && result.all_results.length > 0) {
+            scoresHtml = `
+                <div class="tech-score-list" style="margin-top: 15px; font-size: 0.85rem; border-top: 1px dashed #dee2e6; pt-2">
+                    <div style="font-weight: 600; margin-bottom: 5px; color: #495057;">Class Scores:</div>
+                    ${result.all_results.map(r => `
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                            <span>${r.name}:</span>
+                            <span style="font-family: monospace; font-weight: 600;">${(r.confidence * 100).toFixed(1)}%</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
         mainScanResultBox.innerHTML = `
-            <div class="tech-result-header ${status.toLowerCase()}">
-                <i class="fa-solid ${iconMap[status]}"></i>
-                <span style="color: ${colorMap[status]}; font-weight: 800;">${status}</span>
+            <div class="tech-result-header ${status.toLowerCase()}" style="padding: 15px; border-radius: 8px; background: rgba(0,0,0,0.02);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <i class="fa-solid ${iconMap[status]}" style="font-size: 1.5rem; color: ${colorMap[status]};"></i>
+                    <div>
+                        <div style="color: ${colorMap[status]}; font-weight: 800; font-size: 1.2rem; line-height: 1;">${status}</div>
+                        <div style="font-size: 0.9rem; color: #495057; font-weight: 600;">Detection: ${result.matched_part || 'UNKNOWN'}</div>
+                    </div>
+                </div>
+                ${scoresHtml}
             </div>
         `;
         updateStats();
