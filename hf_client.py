@@ -31,18 +31,6 @@ class ProcessingError(HuggingFaceClientError):
 
 
 class HuggingFaceClient:
-    """
-    Client for the Engine Part CV backend (Gradio SSE protocol).
-    
-    The backend uses:
-      - Illumination-normalized texture features (homomorphic filtering)
-      - Mid-level CNN features (layer2+layer3) + handcrafted texture descriptors
-      - Softmax-scaled margin-based confidence scoring (τ=0.05)
-    
-    Confidence values are proper probabilities (0–1) from softmax, NOT raw
-    cosine similarities. A confidence of 0.70 means the model is 70% sure
-    about the top class.
-    """
 
     DEFAULT_BASE_URL = "https://eho69-arch.hf.space"
     CONFIDENCE_THRESHOLD = 0.60  # Softmax probability threshold
@@ -345,11 +333,10 @@ class HuggingFaceClient:
             failures = ["no bolt holes", "localization failed", "insufficient hole"]
             is_valid = not any(f in status_lower for f in failures)
 
-            if not is_valid or confidence < self.CONFIDENCE_THRESHOLD:
+            matched = result[1].get("matched", False) if isinstance(result[1], dict) else True
+            if not is_valid:
                 best_match = "UNKNOWN"
                 matched = False
-            else:
-                matched = True
 
             # ── Download visualization assets ─────────────────────────────────
             # Files are downloaded to temp, read to bytes, then immediately deleted
