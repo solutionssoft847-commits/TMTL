@@ -31,7 +31,7 @@ class ProcessingError(HuggingFaceClientError):
 
 
 class HuggingFaceClient:
-
+    
     DEFAULT_BASE_URL = "https://eho69-arch.hf.space"
     CONFIDENCE_THRESHOLD = 0.60  # Softmax probability threshold
 
@@ -176,20 +176,7 @@ class HuggingFaceClient:
 
     @staticmethod
     def _parse_label_data(label_data: Any) -> tuple[str, float, dict]:
-        """
-        Parse the Gradio Label component output.
         
-        Gradio Label returns:
-          {"label": "Perfect", "confidences": [
-              {"label": "Perfect", "confidence": 0.73},
-              {"label": "Defected", "confidence": 0.27}
-          ]}
-        
-        The confidences are now softmax probabilities (proper 0-1 range),
-        NOT raw cosine similarities.
-        
-        Returns: (best_match, confidence, all_scores)
-        """
         best_match = "UNKNOWN"
         confidence = 0.0
         all_scores = {}
@@ -225,14 +212,7 @@ class HuggingFaceClient:
 
     @staticmethod
     def _parse_status_text(status_text: str) -> dict:
-        """
-        Extract structured data from the match report markdown.
-        
-        Parses lines like:
-          📊 **Confidence**: 73.24%
-          📏 **Raw Similarity**: 0.9412
-          🎯 **Status**: ✅ PASS: Perfect
-        """
+       
         info = {"confidence_pct": None, "raw_similarity": None, "status_line": None}
 
         if not isinstance(status_text, str):
@@ -259,14 +239,7 @@ class HuggingFaceClient:
     # ─────────────────────────────────────────────────────────────────────────────
 
     async def save_template(self, name: str, images: List[Image.Image]) -> Dict[str, Any]:
-        """
-        Registers training samples for a class cluster.
-        
-        IMPORTANT: Send raw/minimally processed images. The backend performs
-        its own illumination normalization (homomorphic filtering) before
-        feature extraction. Excessive client-side enhancement (contrast boost,
-        sharpening) can actually degrade feature quality.
-        """
+       
         try:
             results = []
             with tempfile.TemporaryDirectory() as tmp_dir:
@@ -360,7 +333,7 @@ class HuggingFaceClient:
                 "confidence": confidence,
                 "best_match": best_match,
                 "status_text": status_text,
-                "all_results": status_text,
+                "all_results": [{"name": k, "confidence": v} for k, v in all_scores.items()],
                 "all_scores": all_scores,
                 "visualization": local_vis_path,
                 "attention_map": local_attn_path,
