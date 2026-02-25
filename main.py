@@ -1,3 +1,5 @@
+
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
@@ -403,7 +405,7 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
 @app.post("/api/scan")
 async def scan_image(
     file: UploadFile = File(...),
-    threshold: float = 0.70,
+    threshold: float = 0.20,
     db: Session = Depends(get_db)
 ):
     """Scan uploaded image with advanced preprocessing"""
@@ -507,7 +509,7 @@ async def scan_image(
 @app.post("/api/capture_and_scan")
 async def capture_and_scan(
     camera_id: Optional[int] = 0,
-    threshold: float = 0.70,
+    threshold: float = 0.20,
     db: Session = Depends(get_db)
 ):
     """Capture from camera and scan - optimized for speed"""
