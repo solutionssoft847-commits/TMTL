@@ -441,11 +441,12 @@ async def scan_image(
             raise HTTPException(status_code=502, detail=f"AI Engine Error: {result.get('error')}")
 
         # Determine industrial pass/fail status
+        PASS_CLASSES = {"perfect", "passed", "good", "acceptable", "ok"}
         best_match = str(result.get("best_match", "")).lower()
-        if result.get("matched") and "perfect" in best_match:
+        
+        if result.get("matched") and any(cls in best_match for cls in PASS_CLASSES):
             status = "PASS"
         else:
-            # Fails if below threshold OR matched with 'Defect'/'Defected'
             status = "FAIL"
         
         # Convert visualization image to base64 then immediately delete the
