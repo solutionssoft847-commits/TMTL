@@ -411,7 +411,7 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
 @app.post("/api/scan")
 async def scan_image(
     file: UploadFile = File(...),
-    threshold: float = 0.70,
+    threshold: float = 0.50,
     db: Session = Depends(get_db)
 ):
     """Scan uploaded image with advanced preprocessing"""
@@ -443,11 +443,17 @@ async def scan_image(
         # Determine industrial pass/fail status
         PASS_CLASSES = {"perfect", "passed", "good", "acceptable", "ok"}
         best_match = str(result.get("best_match", "")).lower()
-        
-        if result.get("matched") and any(cls in best_match for cls in PASS_CLASSES):
-            status = "PASS"
+
+        if result.get("matched"):
+            if any(cls in best_match for cls in PASS_CLASSES):
+                status = "PASS"
+            elif "defect" in best_match or "fail" in best_match:
+                status = "FAIL"
+            else:
+                status = "UNKNOWN"
         else:
-            status = "FAIL"
+            # Below threshold -> UNKNOWN (Yellow on dashboard)
+            status = "UNKNOWN"
         
         # Convert visualization image to base64 then immediately delete the
         # temp file so downloaded assets do not accumulate on disk.
