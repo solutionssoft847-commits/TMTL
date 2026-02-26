@@ -1,5 +1,3 @@
-
-
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
@@ -65,7 +63,15 @@ camera_manager = CameraManager()
 # ==================== IMAGE PROCESSOR ====================
 
 class ImageProcessor:
+    """Image validation and minimal preprocessing for industrial quality.
     
+    NOTE: The AI backend performs its own illumination normalization
+    (homomorphic filtering) to remove shadow/lighting artifacts.
+    Client-side enhancement (contrast boost, sharpening, color correction)
+    can FIGHT the backend's normalization and degrade accuracy.
+    We only do validation and safe resizing here.
+    """
+
     @staticmethod
     def validate_image_quality(img: Image.Image, min_resolution: tuple = (320, 240)) -> tuple:
         """Validate image meets quality standards"""
@@ -326,33 +332,47 @@ async def create_template(
                 detail=f"No valid images. Issues: {'; '.join(quality_issues)}"
             )
 
-        # Call HF Cloud to add samples to the class cluster
+        # Call HF Cloud — backend runs bolt detection (detect_and_crop)
+        # and rejects images where bolt holes are not found
         result = await hf_client.save_template(name, template_images)
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=result.get("error", "Failed to register class samples"))
+
+        # Use backend's accepted count (not len(template_images))
+        # because the backend may have rejected images without bolt holes
+        accepted_count = result.get("accepted", 0)
+        backend_rejections = result.get("rejected_reasons", [])
+        if backend_rejections:
+            quality_issues.extend(backend_rejections)
+
+        if accepted_count == 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No images accepted by AI backend — bolt holes not detected. Issues: {'; '.join(quality_issues)}"
+            )
 
         # Check if class already exists
         db_template = db.query(Template).filter(Template.name == name).first()
         
         if db_template:
-            # Update existing class cluster
-            db_template.image_count += len(template_images)
+            # Update existing — only add actually accepted images
+            db_template.image_count += accepted_count
             logger.info(f"Class Cluster '{name}' updated. Total samples: {db_template.image_count}")
         else:
             # Create new class cluster
             db_template = Template(
                 name=name,
-                image_count=len(template_images),
+                image_count=accepted_count,
                 created_at=datetime.utcnow()
             )
             db.add(db_template)
-            logger.info(f"New Class Cluster '{name}' created with {len(template_images)} samples")
+            logger.info(f"New Class Cluster '{name}' created with {accepted_count} samples")
             
         db.commit()
         db.refresh(db_template)
 
         if quality_issues:
-            logger.warning(f"Class Cluster '{name}' updates had quality issues: {quality_issues}")
+            logger.warning(f"Class Cluster '{name}' had issues: {quality_issues}")
 
         return db_template
 
@@ -405,7 +425,7 @@ async def delete_template(template_id: int, db: Session = Depends(get_db)):
 @app.post("/api/scan")
 async def scan_image(
     file: UploadFile = File(...),
-    threshold: float = 0.20,
+    threshold: float = 0.70,
     db: Session = Depends(get_db)
 ):
     """Scan uploaded image with advanced preprocessing"""
@@ -434,15 +454,18 @@ async def scan_image(
         if not result.get("success"):
             raise HTTPException(status_code=502, detail=f"AI Engine Error: {result.get('error')}")
 
-        # Determine industrial pass/fail status
-        # Bug 5 Fix: Pass if matched with any approved quality class
-        PASS_CLASSES = {"perfect", "passed", "good", "acceptable", "ok"}
-        best_match = str(result.get("best_match", "")).lower()
-        
-        if result.get("matched") and any(cls in best_match for cls in PASS_CLASSES):
+        # Determine PASS/FAIL from backend's anomaly-based verdict
+        # index.py returns status_text like "## ✅ PASS — ..." or "## ❌ FAIL — ..."
+        status_text = str(result.get("status_text", ""))
+        if "✅ PASS" in status_text or "✅ pass" in status_text.lower():
             status = "PASS"
-        else:
+        elif "❌ FAIL" in status_text or "❌ fail" in status_text.lower():
             status = "FAIL"
+        elif result.get("best_match", "").upper() == "UNKNOWN":
+            status = "FAIL"
+        else:
+            # Fallback: trust matched flag
+            status = "PASS" if result.get("matched") else "FAIL"
         
         # Convert visualization image to base64 then immediately delete the
         # temp file so downloaded assets do not accumulate on disk.
@@ -509,7 +532,7 @@ async def scan_image(
 @app.post("/api/capture_and_scan")
 async def capture_and_scan(
     camera_id: Optional[int] = 0,
-    threshold: float = 0.20,
+    threshold: float = 0.70,
     db: Session = Depends(get_db)
 ):
     """Capture from camera and scan - optimized for speed"""
@@ -555,13 +578,18 @@ async def capture_and_scan(
 
         total_time = time.time() - start_time
 
-        # Determine industrial pass/fail status
-        best_match = str(detection_result.get("best_match", "")).lower()
-        if detection_result.get("matched") and "perfect" in best_match:
+        # Determine PASS/FAIL from backend's anomaly-based verdict
+        # index.py returns status_text like "## ✅ PASS — ..." or "## ❌ FAIL — ..."
+        status_text = str(detection_result.get("status_text", ""))
+        if "✅ PASS" in status_text or "✅ pass" in status_text.lower():
             status = "PASS"
-        else:
-            # Fails if below threshold OR matched with 'Defect'/'Defected'
+        elif "❌ FAIL" in status_text or "❌ fail" in status_text.lower():
             status = "FAIL"
+        elif detection_result.get("best_match", "").upper() == "UNKNOWN":
+            status = "FAIL"
+        else:
+            # Fallback: trust matched flag
+            status = "PASS" if detection_result.get("matched") else "FAIL"
         
         # Convert visualization image to base64 then immediately delete the
         # temp file so downloaded assets do not accumulate on disk.
