@@ -31,18 +31,7 @@ class ProcessingError(HuggingFaceClientError):
 
 
 class HuggingFaceClient:
-    """
-    Client for the Engine Part CV backend (Gradio SSE protocol).
     
-    The backend uses:
-      - Illumination-normalized texture features (homomorphic filtering)
-      - Mid-level CNN features (layer2+layer3) + handcrafted texture descriptors
-      - Softmax-scaled margin-based confidence scoring (τ=0.05)
-    
-    Confidence values are proper probabilities (0–1) from softmax, NOT raw
-    cosine similarities. A confidence of 0.70 means the model is 70% sure
-    about the top class.
-    """
 
     DEFAULT_BASE_URL = "https://eho69-arch.hf.space"
     CONFIDENCE_THRESHOLD = 0.60  # Softmax probability threshold
@@ -237,14 +226,7 @@ class HuggingFaceClient:
 
     @staticmethod
     def _parse_status_text(status_text: str) -> dict:
-        """
-        Extract structured data from the match report markdown.
         
-        Parses lines like:
-          📊 **Confidence**: 73.24%
-          📏 **Raw Similarity**: 0.9412
-          🎯 **Status**: ✅ PASS: Perfect
-        """
         info = {"confidence_pct": None, "raw_similarity": None, "status_line": None}
 
         if not isinstance(status_text, str):
@@ -271,16 +253,12 @@ class HuggingFaceClient:
     # ─────────────────────────────────────────────────────────────────────────────
 
     async def save_template(self, name: str, images: List[Image.Image]) -> Dict[str, Any]:
-        """
-        Registers training samples for a class cluster.
         
-        IMPORTANT: Send raw/minimally processed images. The backend performs
-        its own illumination normalization (homomorphic filtering) before
-        feature extraction. Excessive client-side enhancement (contrast boost,
-        sharpening) can actually degrade feature quality.
-        """
         try:
-            results = []
+            accepted = 0
+            rejected = 0
+            rejected_reasons = []
+
             with tempfile.TemporaryDirectory() as tmp_dir:
                 for idx, img in enumerate(images):
                     # Save as high-quality PNG — no aggressive preprocessing
@@ -293,14 +271,37 @@ class HuggingFaceClient:
                         name
                     ]
                     result = await self._call_api("add_sample", payload)
-                    results.append(result)
 
-                    logger.info(f"Training sample {idx+1}/{len(images)} added to '{name}'")
+                    # Backend returns [status_text, roi_image]
+                    # status_text contains ❌/⚠️ if bolt detection failed
+                    status_text = str(result[0]) if result and len(result) > 0 else ""
 
-            return {"success": True, "result": results[-1] if results else None}
+                    if "❌" in status_text or "⚠️" in status_text:
+                        rejected += 1
+                        rejected_reasons.append(f"Sample {idx+1}: {status_text.split(chr(10))[0]}")
+                        logger.warning(f"Sample {idx+1}/{len(images)} REJECTED for '{name}': {status_text[:100]}")
+                    else:
+                        accepted += 1
+                        logger.info(f"Sample {idx+1}/{len(images)} accepted for '{name}'")
+
+            if accepted == 0 and rejected > 0:
+                return {
+                    "success": False,
+                    "error": f"All {rejected} image(s) rejected — no bolt holes detected",
+                    "accepted": 0,
+                    "rejected": rejected,
+                    "rejected_reasons": rejected_reasons
+                }
+
+            return {
+                "success": True,
+                "accepted": accepted,
+                "rejected": rejected,
+                "rejected_reasons": rejected_reasons,
+            }
         except Exception as e:
             logger.error(f"Training cluster failed: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False, "error": str(e), "accepted": 0, "rejected": 0}
 
     async def detect_part(self, image: Image.Image, threshold: float = 0.70) -> Dict[str, Any]:
         
