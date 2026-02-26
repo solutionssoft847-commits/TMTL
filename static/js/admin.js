@@ -180,6 +180,10 @@ document.addEventListener('DOMContentLoaded', function () {
         btnStartInspection.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Analyzing...';
         btnStartInspection.disabled = true;
 
+        // Show loading state in result box
+        mainScanResultBox.classList.remove('hidden');
+        mainScanResultBox.innerHTML = '<div class="loading-spinner-tech"><i class="fa-solid fa-circle-notch fa-spin"></i> Analyzing captured frame...</div>';
+
         try {
             // Setup canvas dimensions to match video
             canvas.width = feedImg.videoWidth;
@@ -202,17 +206,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 body: formData
             });
             const result = await response.json();
-
-            if (result.success) {
-                alert(`Inspection Complete: ${result.status}`);
-                updateStats();
-            } else {
-                alert('Analysis Failed: ' + (result.error || result.detail || 'Unknown error'));
-            }
+            showScanResult(result);
 
         } catch (error) {
             console.error('Capture/Analysis error:', error);
-            alert('Analysis failed. Please check camera and try again.');
+            mainScanResultBox.innerHTML = '<div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> Analysis failed. Check camera and try again.</div>';
         } finally {
             btnStartInspection.innerHTML = originalText;
             btnStartInspection.disabled = false;
@@ -315,8 +313,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ================= SCAN RESULT DISPLAY =================
     function showScanResult(result) {
-        if (result.error) {
-            mainScanResultBox.innerHTML = `<div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> ${result.error}</div>`;
+        if (result.error || result.detail) {
+            mainScanResultBox.innerHTML = `<div class="error-msg"><i class="fa-solid fa-circle-exclamation"></i> ${result.error || result.detail}</div>`;
             return;
         }
 
@@ -325,11 +323,41 @@ document.addEventListener('DOMContentLoaded', function () {
                 : 'FAIL';
         const colorMap = { PASS: '#0ca678', FAIL: '#fa5252', UNKNOWN: '#f59f00' };
         const iconMap = { PASS: 'fa-check-circle', FAIL: 'fa-triangle-exclamation', UNKNOWN: 'fa-question-circle' };
+        const bgMap = { PASS: 'rgba(12,166,120,0.08)', FAIL: 'rgba(250,82,82,0.08)', UNKNOWN: 'rgba(245,159,0,0.08)' };
+
+        const confidence = result.confidence != null ? (result.confidence * 100).toFixed(1) : null;
+        const matchedPart = result.matched_part || '—';
+
+        let visHtml = '';
+        if (result.visualization) {
+            visHtml = `
+                <div style="margin-top: 12px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06);">
+                    <img src="data:image/png;base64,${result.visualization}" 
+                         style="width: 100%; display: block;" alt="AI Visualization">
+                </div>`;
+        }
 
         mainScanResultBox.innerHTML = `
-            <div class="tech-result-header ${status.toLowerCase()}">
-                <i class="fa-solid ${iconMap[status]}"></i>
-                <span style="color: ${colorMap[status]}; font-weight: 800;">${status}</span>
+            <div style="background: ${bgMap[status]}; border: 1px solid ${colorMap[status]}30; border-radius: 12px; padding: 20px;">
+                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 14px;">
+                    <i class="fa-solid ${iconMap[status]}" style="font-size: 28px; color: ${colorMap[status]};"></i>
+                    <span style="color: ${colorMap[status]}; font-weight: 800; font-size: 22px;">${status}</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    ${confidence !== null ? `
+                    <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 12px;">
+                        <div style="font-size: 11px; text-transform: uppercase; opacity: 0.6; margin-bottom: 4px;">Confidence</div>
+                        <div style="font-size: 20px; font-weight: 700; color: ${colorMap[status]};">${confidence}%</div>
+                        <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 6px;">
+                            <div style="height: 100%; width: ${Math.min(confidence, 100)}%; background: ${colorMap[status]}; border-radius: 2px;"></div>
+                        </div>
+                    </div>` : ''}
+                    <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 12px;">
+                        <div style="font-size: 11px; text-transform: uppercase; opacity: 0.6; margin-bottom: 4px;">Matched Class</div>
+                        <div style="font-size: 18px; font-weight: 600;">${matchedPart}</div>
+                    </div>
+                </div>
+                ${visHtml}
             </div>
         `;
         updateStats();
