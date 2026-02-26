@@ -177,20 +177,7 @@ class HuggingFaceClient:
 
     @staticmethod
     def _parse_label_data(label_data: Any) -> tuple[str, float, dict]:
-        """
-        Parse the Gradio Label component output.
         
-        Gradio Label returns:
-          {"label": "Perfect", "confidences": [
-              {"label": "Perfect", "confidence": 0.73},
-              {"label": "Defected", "confidence": 0.27}
-          ]}
-        
-        The confidences are now softmax probabilities (proper 0-1 range),
-        NOT raw cosine similarities.
-        
-        Returns: (best_match, confidence, all_scores)
-        """
         best_match = "UNKNOWN"
         confidence = 0.0
         all_scores = {}
@@ -273,16 +260,19 @@ class HuggingFaceClient:
                     result = await self._call_api("add_sample", payload)
 
                     # Backend returns [status_text, roi_image]
-                    # status_text contains ❌/⚠️ if bolt detection failed
+                    # Success: starts with "✅ Added to 'ClassName'..."
+                    # Rejection: starts with "❌" or "⚠️" (from detect_and_crop failure)
+                    # NOTE: successful responses CAN contain ⚠️ as warnings
+                    # (low sample count, PCA not fitted) — so we check the prefix
                     status_text = str(result[0]) if result and len(result) > 0 else ""
 
-                    if "❌" in status_text or "⚠️" in status_text:
+                    if status_text.startswith("✅"):
+                        accepted += 1
+                        logger.info(f"Sample {idx+1}/{len(images)} accepted for '{name}'")
+                    else:
                         rejected += 1
                         rejected_reasons.append(f"Sample {idx+1}: {status_text.split(chr(10))[0]}")
                         logger.warning(f"Sample {idx+1}/{len(images)} REJECTED for '{name}': {status_text[:100]}")
-                    else:
-                        accepted += 1
-                        logger.info(f"Sample {idx+1}/{len(images)} accepted for '{name}'")
 
             if accepted == 0 and rejected > 0:
                 return {
