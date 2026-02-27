@@ -332,8 +332,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (result.visualization) {
             visHtml = `
                 <div style="margin-top: 12px; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06);">
-                    <img src="data:image/png;base64,${result.visualization}" 
-                         style="width: 100%; display: block;" alt="AI Visualization">
+                    
                 </div>`;
         }
 
@@ -346,14 +345,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
                     ${confidence !== null ? `
                     <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 12px;">
-                        <div style="font-size: 11px; text-transform: uppercase; opacity: 0.6; margin-bottom: 4px;">Confidence</div>
+                       
                         <div style="font-size: 20px; font-weight: 700; color: ${colorMap[status]};">${confidence}%</div>
                         <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 6px;">
                             <div style="height: 100%; width: ${Math.min(confidence, 100)}%; background: ${colorMap[status]}; border-radius: 2px;"></div>
                         </div>
                     </div>` : ''}
                     <div style="background: rgba(0,0,0,0.15); border-radius: 8px; padding: 12px;">
-                        // <div style="font-size: 11px; text-transform: uppercase; opacity: 0.6; margin-bottom: 4px;">Matched Class</div>
+                        
                         <div style="font-size: 18px; font-weight: 600;">${matchedPart}</div>
                     </div>
                 </div>
