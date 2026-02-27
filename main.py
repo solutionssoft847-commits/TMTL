@@ -99,13 +99,7 @@ class ImageProcessor:
 
     @staticmethod
     def prepare_for_detection(img: Image.Image, target_size: tuple = (1024, 1024)) -> Image.Image:
-        """Prepare image for AI detection — resize only, no enhancement.
-        
-        The backend handles illumination normalization internally.
-        Applying contrast/sharpness/color adjustments here would
-        interfere with the backend's homomorphic filtering and
-        cause light/shadow confusion in the feature extractor.
-        """
+       
         # Convert to RGB if needed
         if img.mode != 'RGB':
             img = img.convert('RGB')
@@ -306,7 +300,11 @@ async def create_template(
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
-    """Upload samples to a Class Cluster with quality validation"""
+    """Upload samples to a Class Cluster with quality validation.
+    
+    Uses the backend's bolt-detection (ROI localisation) to reject
+    images where bolt holes are not detected — matching index.py logic.
+    """
     try:
         if len(files) < 1 or len(files) > 10:
             raise HTTPException(status_code=400, detail="Please upload between 1 and 10 samples")
@@ -454,18 +452,16 @@ async def scan_image(
         if not result.get("success"):
             raise HTTPException(status_code=502, detail=f"AI Engine Error: {result.get('error')}")
 
-        # Determine PASS/FAIL from backend's anomaly-based verdict
-        # index.py returns status_text like "## ✅ PASS — ..." or "## ❌ FAIL — ..."
-        status_text = str(result.get("status_text", ""))
-        if "✅ PASS" in status_text or "✅ pass" in status_text.lower():
+        # Apply business logic for PASS/FAIL/UNKNOWN based on matched class
+        best_match = str(result.get("best_match", "")).upper()
+        
+        if "PERFECT" in best_match:
             status = "PASS"
-        elif "❌ FAIL" in status_text or "❌ fail" in status_text.lower():
-            status = "FAIL"
-        elif result.get("best_match", "").upper() == "UNKNOWN":
-            status = "FAIL"
+        elif "UNKNOWN" in best_match:
+            status = "UNKNOWN"
         else:
-            # Fallback: trust matched flag
-            status = "PASS" if result.get("matched") else "FAIL"
+            # Defect or any other unexpected class is a FAIL
+            status = "FAIL"
         
         # Convert visualization image to base64 then immediately delete the
         # temp file so downloaded assets do not accumulate on disk.
@@ -578,18 +574,16 @@ async def capture_and_scan(
 
         total_time = time.time() - start_time
 
-        # Determine PASS/FAIL from backend's anomaly-based verdict
-        # index.py returns status_text like "## ✅ PASS — ..." or "## ❌ FAIL — ..."
-        status_text = str(detection_result.get("status_text", ""))
-        if "✅ PASS" in status_text or "✅ pass" in status_text.lower():
+        # Apply business logic for PASS/FAIL/UNKNOWN based on matched class
+        best_match = str(detection_result.get("best_match", "")).upper()
+        
+        if "PERFECT" in best_match:
             status = "PASS"
-        elif "❌ FAIL" in status_text or "❌ fail" in status_text.lower():
-            status = "FAIL"
-        elif detection_result.get("best_match", "").upper() == "UNKNOWN":
-            status = "FAIL"
+        elif "UNKNOWN" in best_match:
+            status = "UNKNOWN"
         else:
-            # Fallback: trust matched flag
-            status = "PASS" if detection_result.get("matched") else "FAIL"
+            # Defect or any other unexpected class is a FAIL
+            status = "FAIL"
         
         # Convert visualization image to base64 then immediately delete the
         # temp file so downloaded assets do not accumulate on disk.
